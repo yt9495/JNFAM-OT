@@ -22,7 +22,7 @@ var OTCore = (function () {
 
   var STATUS = {
     PENDING: 'PENDING', APPROVED: 'APPROVED', REJECTED: 'REJECTED',
-    CANCELLED: 'CANCELLED', EXPIRED: 'EXPIRED', VERIFIED: 'VERIFIED', CPA: 'CPA'
+    CANCELLED: 'CANCELLED', EXPIRED: 'EXPIRED', VERIFIED: 'VERIFIED', CPA: 'CPA', EXCLUDED: 'EXCLUDED'
   };
 
   var COLUMNS = {
@@ -30,7 +30,7 @@ var OTCore = (function () {
     Requests: ['id', 'groupId', 'empId', 'empName', 'date', 'start', 'end', 'breakMin', 'otType', 'description',
       'hours', 'premium', 'multiplier', 'status', 'ack', 'submittedAt', 'decidedAt', 'decidedBy', 'decidedByName',
       'decisionComment', 'actualIn', 'actualOut', 'actualHours', 'verifyResult', 'recognizedHours', 'rate', 'pay',
-      'verifyNote', 'verifiedAt', 'verifiedBy', 'docId', 'lateEntry', 'lateReason', 'preApproved'],
+      'verifyNote', 'verifiedAt', 'verifiedBy', 'docId', 'lateEntry', 'lateReason', 'preApproved', 'source'],
     Holidays: ['date', 'name'],
     Settings: ['key', 'value'],
     Docs: ['id', 'month', 'createdAt', 'createdBy', 'requestIds', 'totalHours', 'totalPay', 'status', 'note'],
@@ -47,6 +47,8 @@ var OTCore = (function () {
     premiumSunday: 'FALSE',
     graceMinutes: '10',
     reviewMinutes: '15',
+    employeeRequests: 'FALSE',
+    startDate: '',
     cpaName: '',
     cpaEmail: '',
     adminEmail: '',
@@ -160,10 +162,11 @@ var OTCore = (function () {
         else if (p.m < 1440) anomalies.push('OUT_WITHOUT_IN');
       }
     });
+    var openIn = open && open.m < 1440 ? open.m : null;
     if (open && open.m < 1440 && anomalies.indexOf('MISSING_OUT') < 0) anomalies.push('MISSING_OUT');
     // keep only intervals that start on the date
     intervals = intervals.filter(function (iv) { return iv.s < 1440; });
-    return { intervals: intervals, anomalies: anomalies };
+    return { intervals: intervals, anomalies: anomalies, openIn: openIn };
   }
 
   function matchPunches(punches, req, graceMinutes) {
@@ -194,6 +197,49 @@ var OTCore = (function () {
       overlapHours: round2(overlap / 60),
       anomalies: anomalies, result: result, recognizedHours: recognized, approvedHours: net
     };
+  }
+
+  function hhmm(m) { m = ((Math.round(m) % 1440) + 1440) % 1440; return pad(Math.floor(m / 60)) + ':' + pad(m % 60); }
+
+  /**
+   * OT candidates straight from the Time Clock (one row per employee-day).
+   * Weekday: time after scheduled end (+ time before schedStart-60). Off day / holiday: all worked time.
+   */
+  function clockCandidates(punchesByEmp, employees, holidays, settings, month) {
+    var min = Number(settings.reviewMinutes) || 15;
+    var out = [];
+    employees.forEach(function (emp) {
+      var ps = punchesByEmp[emp.id] || [];
+      var dates = {};
+      ps.forEach(function (p) { if (String(p.date).slice(0, 7) === month && (!settings.startDate || p.date >= settings.startDate)) dates[p.date] = 1; });
+      Object.keys(dates).sort().forEach(function (date) {
+        var b = buildIntervals(ps, date), ivs = b.intervals;
+        var wd = weekday(date);
+        var offDay = wd === 0 || wd === 6 || isPremiumDay(date, holidays, settings);
+        var schedS = toMin(emp.schedStart || '09:00'), schedE = toMin(emp.schedEnd || '17:00');
+        var segs = [];
+        ivs.forEach(function (iv) {
+          if (offDay) { segs.push({ s: iv.s, e: iv.e }); return; }
+          if (iv.s < schedS - 60) segs.push({ s: iv.s, e: Math.min(iv.e, schedS - 60) });
+          if (iv.e > schedE) segs.push({ s: Math.max(iv.s, schedE), e: iv.e });
+        });
+        var mins = segs.reduce(function (a, x) { return a + Math.max(0, x.e - x.s); }, 0);
+        if (mins < min && !b.anomalies.length) return;
+        if (!ivs.length && !b.anomalies.length) return;
+        var s0 = segs.length ? Math.min.apply(null, segs.map(function (x) { return x.s; })) : 0;
+        var e0 = segs.length ? Math.max.apply(null, segs.map(function (x) { return x.e; })) : 0;
+        out.push({
+          key: emp.id + '|' + date, empId: emp.id, empName: emp.name, date: date, offDay: offDay,
+          sched: (emp.schedStart || '09:00') + '–' + (emp.schedEnd || '17:00'),
+          punches: ivs.map(function (iv) { return minToHHMM(iv.s) + '–' + minToHHMM(iv.e); }).concat(b.openIn != null ? [minToHHMM(b.openIn) + '–?'] : []).join(', '),
+          anomalies: b.anomalies,
+          otStart: segs.length ? hhmm(s0) : '', otEnd: segs.length ? hhmm(e0) : '',
+          otLabel: segs.map(function (x) { return minToHHMM(x.s) + '–' + minToHHMM(x.e); }).join(', '),
+          otHours: round2(mins / 60)
+        });
+      });
+    });
+    return out;
   }
 
   /**
@@ -496,6 +542,11 @@ var OTCore = (function () {
         return {
           rows: rows,
           unapproved: unapprovedExtra(punches, emps, reqs, hol, s, month),
+          candidates: clockCandidates(punches, emps, hol, s, month).map(function (c) {
+            c.records = reqs.filter(function (r) { return r.empId === c.empId && r.date === c.date && [STATUS.REJECTED, STATUS.CANCELLED, STATUS.EXPIRED].indexOf(r.status) < 0; })
+              .map(function (r) { return r.id; });
+            return c;
+          }),
           punchCount: Object.keys(punches).reduce(function (a, k) { return a + punches[k].length; }, 0)
         };
       },
@@ -512,7 +563,7 @@ var OTCore = (function () {
             if ([STATUS.APPROVED, STATUS.VERIFIED].indexOf(r.status) < 0) err('STATE', r.id + ': ' + r.status);
             if ((r.date + 'T' + r.end) > now.slice(0, 16) && windowOf(r).e < 1440) err('FUTURE', 'FUTURE:' + r.id);
             var rec = round2(it.recognizedHours);
-            if (rec < 0 || rec > Number(r.hours)) err('CAP', 'CAP:' + r.id);
+            if (rec < 0 || rec > 24) err('CAP', 'CAP:' + r.id);
             if (it.result === 'MANUAL' && !String(it.note || '').trim()) err('NOTE', 'NOTE:' + r.id);
             var emp = emps.filter(function (e) { return e.id === r.empId; })[0] || {};
             r.actualIn = it.actualIn || ''; r.actualOut = it.actualOut || '';
@@ -532,11 +583,102 @@ var OTCore = (function () {
         });
       },
 
+      /** Admin final approval straight from Time Clock candidates. */
+      finalizeClock: function (p) {
+        var u = auth(p); need(u, 'admin');
+        var items = p.items || [];
+        var s = settings(), hol = holidays();
+        // Re-derive candidates from the Time Clock on the server: only what is in the Time Clock can be approved.
+        var cand = {};
+        var months = {};
+        items.forEach(function (it) { months[String(it.date).slice(0, 7)] = 1; });
+        Object.keys(months).forEach(function (m) {
+          var from = m + '-01', to = addDays(addDays(m + '-28', 4).slice(0, 7) + '-01', -1);
+          var emps0 = employees().filter(function (e) { return isTrue(e.active) && e.timeClockName; });
+          clockCandidates(punchesFor(from, to), emps0, hol, s, m).forEach(function (c) { cand[c.key] = c; });
+        });
+        return store.lock(function () {
+          var all = store.read('Requests'), emps = employees(), now = store.nowET(), done = [];
+          var seq = all.length;
+          items.forEach(function (it) {
+            var emp = emps.filter(function (e) { return e.id === it.empId; })[0];
+            if (!emp) err('NOTFOUND', it.empId);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(it.date || '')) err('DATE', 'Invalid date');
+            var dup = all.concat(done).filter(function (r) { return r.empId === it.empId && r.date === it.date && [STATUS.REJECTED, STATUS.CANCELLED, STATUS.EXPIRED].indexOf(r.status) < 0; });
+            if (dup.length) err('DUP', 'DUP:' + emp.name + ' ' + it.date);
+            var c = cand[it.empId + '|' + it.date];
+            if (!c || !(c.otHours > 0)) err('NOCLOCK', 'NOCLOCK:' + emp.name + ' ' + it.date);
+            it.otStart = c.otStart; it.otEnd = c.otEnd; it.clockHours = c.otHours;
+            var ps = String(c.punches || '').split(', ');
+            it.actualIn = (ps[0] || '').split('–')[0]; it.actualOut = (ps[ps.length - 1] || '').split('–')[1] || '';
+            var pre = !!it.preConfirmed;
+            if (!pre && !String(it.note || '').trim()) err('EXCEPTION', 'EXCEPTION:' + emp.name + ' ' + it.date);
+            var rec = round2(it.recognizedHours);
+            if (!(rec > 0)) err('HOURS', 'HOURS:' + emp.name + ' ' + it.date);
+            if (rec > c.otHours) err('OVERCLOCK', 'OVERCLOCK:' + emp.name + ' ' + it.date + ' (max ' + c.otHours + 'h)');
+            var mult = multiplierFor(it.date, hol, s), rate = Number(emp.rate) || 0;
+            seq++;
+            var r = {
+              id: 'OT' + it.date.slice(2, 4) + it.date.slice(5, 7) + '-' + ('000' + seq).slice(-4) + '-' + store.uuid().slice(0, 4).toUpperCase(),
+              groupId: 'CLOCK', empId: emp.id, empName: emp.name, date: it.date,
+              start: it.otStart || '', end: it.otEnd || '', breakMin: String(Number(it.breakMin) || 0),
+              otType: String(it.otType || ''), description: String(it.task || ''),
+              hours: String(round2(it.clockHours)), premium: isPremiumDay(it.date, hol, s) ? 'Y' : 'N', multiplier: String(mult),
+              status: STATUS.VERIFIED, ack: '', submittedAt: now,
+              decidedAt: now, decidedBy: u.id, decidedByName: u.nameEn || u.name,
+              decisionComment: pre ? 'Pre-confirmed by manager' : 'Exception (no pre-approval)',
+              actualIn: it.actualIn || '', actualOut: it.actualOut || '', actualHours: String(round2(it.clockHours)),
+              verifyResult: rec === round2(Number(it.clockHours) - (Number(it.breakMin) || 0) / 60) ? 'CLOCK' : 'MANUAL',
+              recognizedHours: String(rec), rate: String(rate), pay: String(round2(rec * rate * mult)),
+              verifyNote: String(it.note || ''), verifiedAt: now, verifiedBy: u.nameEn || u.name, docId: '',
+              lateEntry: 'N', lateReason: pre ? '' : String(it.note || ''), preApproved: pre ? 'Y' : 'N', source: 'CLOCK'
+            };
+            done.push(r);
+          });
+          done.forEach(function (r) { store.append('Requests', r); });
+          log(u, 'finalizeClock', '', done.map(function (r) { return r.id + ':' + r.recognizedHours + (r.preApproved === 'N' ? '(exception)' : ''); }).join(','));
+          return { requests: done };
+        });
+      },
+
+      /** Mark a Time Clock day as already handled / not OT so it never shows up again. */
+      excludeClock: function (p) {
+        var u = auth(p); need(u, 'admin');
+        var items = p.items || [];
+        return store.lock(function () {
+          var all = store.read('Requests'), emps = employees(), now = store.nowET(), done = [];
+          var seq = all.length;
+          items.forEach(function (it) {
+            var emp = emps.filter(function (e) { return e.id === it.empId; })[0];
+            if (!emp) err('NOTFOUND', it.empId);
+            if (!String(it.note || '').trim()) err('EXCLUDE_NOTE', 'EXCLUDE_NOTE:' + emp.name + ' ' + it.date);
+            var dup = all.concat(done).filter(function (r) { return r.empId === it.empId && r.date === it.date && [STATUS.REJECTED, STATUS.CANCELLED, STATUS.EXPIRED].indexOf(r.status) < 0; });
+            if (dup.length) err('DUP', 'DUP:' + emp.name + ' ' + it.date);
+            seq++;
+            done.push({
+              id: 'OT' + it.date.slice(2, 4) + it.date.slice(5, 7) + '-' + ('000' + seq).slice(-4) + '-' + store.uuid().slice(0, 4).toUpperCase(),
+              groupId: 'CLOCK', empId: emp.id, empName: emp.name, date: it.date, start: it.otStart || '', end: it.otEnd || '', breakMin: '0',
+              otType: '', description: '', hours: String(round2(it.clockHours)), premium: '', multiplier: '',
+              status: STATUS.EXCLUDED, submittedAt: now, decidedAt: now, decidedBy: u.id, decidedByName: u.nameEn || u.name,
+              decisionComment: 'Excluded: ' + String(it.note).trim(), verifyNote: String(it.note).trim(), recognizedHours: '0', pay: '0',
+              source: 'CLOCK', preApproved: ''
+            });
+          });
+          done.forEach(function (r) { store.append('Requests', r); });
+          log(u, 'excludeClock', '', done.map(function (r) { return r.empId + '|' + r.date; }).join(','));
+          return { requests: done };
+        });
+      },
+
       unverify: function (p) {
         var u = auth(p); need(u, 'admin');
         return store.lock(function () {
           var r = store.read('Requests').filter(function (x) { return x.id === p.id; })[0];
-          if (!r || r.status !== STATUS.VERIFIED) err('STATE');
+          if (!r || (r.status !== STATUS.VERIFIED && r.status !== STATUS.EXCLUDED)) err('STATE');
+          if (r.source === 'CLOCK') {
+            r.status = STATUS.CANCELLED; r.decisionComment = (r.decisionComment || '') + ' / Undone ' + store.nowET();
+            store.upsert('Requests', 'id', r); log(u, 'unverify', r.id); return { request: r };
+          }
           ['actualIn', 'actualOut', 'actualHours', 'verifyResult', 'recognizedHours', 'rate', 'pay', 'verifyNote', 'verifiedAt', 'verifiedBy'].forEach(function (k) { r[k] = ''; });
           r.status = STATUS.APPROVED;
           store.upsert('Requests', 'id', r);
@@ -551,9 +693,15 @@ var OTCore = (function () {
           var all = store.read('Requests'), now = store.nowET();
           var sel = all.filter(function (r) { return (p.ids || []).indexOf(r.id) >= 0; });
           if (!sel.length) err('EMPTY', 'Nothing selected');
+          var seen = {};
           sel.forEach(function (r) {
             if (r.status !== STATUS.VERIFIED) err('STATE', r.id + ' is not verified');
             if (String(r.date).slice(0, 7) !== p.month) err('MONTH', r.id);
+            var k = r.empId + '|' + r.date;
+            if (seen[k]) err('DUPDOC', 'DUPDOC:' + r.empName + ' ' + r.date);
+            seen[k] = 1;
+            var prev = all.filter(function (x) { return x.id !== r.id && x.empId === r.empId && x.date === r.date && x.status === STATUS.CPA; })[0];
+            if (prev) err('DUPDOC', 'DUPDOC:' + r.empName + ' ' + r.date + ' → ' + prev.docId);
           });
           var docs = store.read('Docs');
           var prefix = 'OT-' + p.month.replace('-', '') + '-';
@@ -661,7 +809,7 @@ var OTCore = (function () {
     VERSION: VERSION, preApprovedOf: preApprovedOf, STATUS: STATUS, COLUMNS: COLUMNS, DEFAULT_SETTINGS: DEFAULT_SETTINGS,
     create: create, calcHours: calcHours, toMin: toMin, addDays: addDays, weekday: weekday, pad: pad,
     isPremiumDay: isPremiumDay, multiplierFor: multiplierFor, federalHolidays: federalHolidays,
-    matchPunches: matchPunches, unapprovedExtra: unapprovedExtra, round2: round2, windowOf: windowOf, isTrue: isTrue
+    matchPunches: matchPunches, unapprovedExtra: unapprovedExtra, clockCandidates: clockCandidates, round2: round2, windowOf: windowOf, isTrue: isTrue
   };
 })();
 
