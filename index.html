@@ -210,7 +210,7 @@ var OTCore = (function () {
     Requests: ['id', 'groupId', 'empId', 'empName', 'date', 'start', 'end', 'breakMin', 'otType', 'description',
       'hours', 'premium', 'multiplier', 'status', 'ack', 'submittedAt', 'decidedAt', 'decidedBy', 'decidedByName',
       'decisionComment', 'actualIn', 'actualOut', 'actualHours', 'verifyResult', 'recognizedHours', 'rate', 'pay',
-      'verifyNote', 'verifiedAt', 'verifiedBy', 'docId'],
+      'verifyNote', 'verifiedAt', 'verifiedBy', 'docId', 'lateEntry', 'lateReason', 'preApproved'],
     Holidays: ['date', 'name'],
     Settings: ['key', 'value'],
     Docs: ['id', 'month', 'createdAt', 'createdBy', 'requestIds', 'totalHours', 'totalPay', 'status', 'note'],
@@ -501,7 +501,8 @@ var OTCore = (function () {
       var html = '<div style="font-family:Arial,sans-serif;font-size:14px">'
         + '<p><b>' + esc(user.name) + '</b> 님이 오버타임 사전 승인을 요청했습니다. / ' + esc(user.nameEn || user.name) + ' submitted an overtime pre-approval request.</p>'
         + '<table border="1" cellpadding="6" style="border-collapse:collapse"><tr><th>Date</th><th>Time</th><th>Hours</th><th>Type</th><th>Description</th></tr>' + rows + '</table>'
-        + '<p style="color:#b45309">※ 시작 시각 전에 승인되지 않으면 자동 만료되어 인정되지 않습니다. / Requests not approved before the start time expire automatically.</p>'
+        + (reqs.some(function (r) { return r.lateEntry === 'Y'; }) ? '<p style="color:#b42318">⚠ 시작 시각 이후 등록된 사후 신청이 포함되어 있습니다. / Includes entries submitted after the start time (post-entry).</p>' : '')
+        + '<p style="color:#b45309">※ 시작 시각 이후 승인 시 "사후 승인"으로 표시됩니다. / Approvals after the start time are flagged as post-approved.</p>'
         + (s.appUrl ? '<p><a href="' + s.appUrl + '">' + s.appUrl + '</a></p>' : '') + '</div>';
       store.sendMail(to.join(','), '[JNFAM OT] 승인 요청 / Approval request — ' + (user.nameEn || user.name), html, s.ccEmail);
     }
@@ -512,6 +513,7 @@ var OTCore = (function () {
       var html = '<div style="font-family:Arial,sans-serif;font-size:14px">'
         + '<p>오버타임 신청이 <b>' + (ok ? '승인' : '반려') + '</b>되었습니다. / Your overtime request was <b>' + (ok ? 'APPROVED' : 'REJECTED') + '</b>.</p>'
         + '<p>' + r.date + ' ' + r.start + '–' + r.end + ' (' + r.hours + 'h) · ' + esc(r.otType) + '</p>'
+        + (ok && r.preApproved === 'N' ? '<p style="color:#b42318">⚠ 사후 승인 / Post-approved (approved after start)</p>' : '')
         + (r.decisionComment ? '<p>Comment: ' + esc(r.decisionComment) + '</p>' : '')
         + '<p>Approver: ' + esc(decider.nameEn || decider.name) + ' · ' + r.decidedAt + ' ET</p></div>';
       store.sendMail(emp.email, '[JNFAM OT] ' + (ok ? '승인 Approved' : '반려 Rejected') + ' — ' + r.date, html, '');
@@ -552,7 +554,6 @@ var OTCore = (function () {
 
       bootstrap: function (p) {
         var u = auth(p);
-        expireStale();
         var isAdmin = has(u, 'admin'), isApprover = has(u, 'approver') || isAdmin;
         var reqs = store.read('Requests');
         if (!isApprover) reqs = reqs.filter(function (r) { return r.empId === u.id; });
@@ -588,7 +589,8 @@ var OTCore = (function () {
             if (!/^\d{1,2}:\d{2}$/.test(l.start || '') || !/^\d{1,2}:\d{2}$/.test(l.end || '')) err('TIME', 'Invalid time (line ' + (i + 1) + ')');
             var start = pad(Math.floor(toMin(l.start) / 60)) + ':' + pad(toMin(l.start) % 60);
             var end = pad(Math.floor(toMin(l.end) / 60)) + ':' + pad(toMin(l.end) % 60);
-            if ((l.date + 'T' + start) <= now.slice(0, 16)) err('PAST', 'PAST:' + l.date + ' ' + start);
+            var late = (l.date + 'T' + start) <= now.slice(0, 16);
+            if (late && !String(l.lateReason || '').trim()) err('LATE_REASON', 'LATE_REASON:' + l.date + ' ' + start);
             var hours = calcHours(start, end, l.breakMin);
             if (hours <= 0) err('HOURS', 'OT hours must be > 0 (line ' + (i + 1) + ')');
             if (hours > 16) err('HOURS', 'OT hours too long (line ' + (i + 1) + ')');
@@ -605,7 +607,8 @@ var OTCore = (function () {
               groupId: groupId, empId: empId, empName: u.name, date: l.date, start: start, end: end,
               breakMin: String(Number(l.breakMin) || 0), otType: String(l.otType || ''), description: String(l.description || '').trim(),
               hours: String(hours), premium: isPremiumDay(l.date, hol, s) ? 'Y' : 'N', multiplier: String(multiplierFor(l.date, hol, s)),
-              status: STATUS.PENDING, ack: 'TRUE', submittedAt: now
+              status: STATUS.PENDING, ack: 'TRUE', submittedAt: now,
+              lateEntry: late ? 'Y' : 'N', lateReason: late ? String(l.lateReason).trim() : ''
             };
             created.push(r);
           });
@@ -623,7 +626,7 @@ var OTCore = (function () {
           if (!r) err('NOTFOUND');
           if (r.empId !== u.id && !has(u, 'admin')) err('FORBIDDEN');
           var now = store.nowET();
-          if (!(r.status === STATUS.PENDING || (r.status === STATUS.APPROVED && (r.date + 'T' + r.start) > now.slice(0, 16)))) err('STATE', 'Cannot cancel in this state');
+          if (!(r.status === STATUS.PENDING || (r.status === STATUS.APPROVED && ((r.date + 'T' + r.start) > now.slice(0, 16) || has(u, 'admin'))))) err('STATE', 'Cannot cancel in this state');
           r.status = STATUS.CANCELLED;
           r.decisionComment = (r.decisionComment ? r.decisionComment + ' / ' : '') + 'Cancelled by ' + u.name + ' ' + now;
           store.upsert('Requests', 'id', r);
@@ -643,13 +646,8 @@ var OTCore = (function () {
           if (r.status !== STATUS.PENDING) err('STATE', 'Already processed: ' + r.status);
           var now = store.nowET();
           if (p.decision === 'approve') {
-            if ((r.date + 'T' + r.start) <= now.slice(0, 16)) {
-              r.status = STATUS.EXPIRED;
-              r.decisionComment = 'Auto-expired: approval attempted after start (' + now + ')';
-              store.upsert('Requests', 'id', r);
-              err('EXPIRED', 'EXPIRED');
-            }
             r.status = STATUS.APPROVED;
+            r.preApproved = (r.date + 'T' + r.start) > now.slice(0, 16) ? 'Y' : 'N';
           } else {
             if (!String(p.comment || '').trim()) err('COMMENT', 'Reason required');
             r.status = STATUS.REJECTED;
@@ -832,8 +830,15 @@ var OTCore = (function () {
     return { handle: handle };
   }
 
+  /** 'Y' approved before start · 'N' approved after start · '' not decided */
+  function preApprovedOf(r) {
+    if (r.preApproved === 'Y' || r.preApproved === 'N') return r.preApproved;
+    if (!r.decidedAt || !r.date || !r.start) return '';
+    return String(r.decidedAt).slice(0, 16) < (r.date + 'T' + r.start) ? 'Y' : 'N';
+  }
+
   return {
-    VERSION: VERSION, STATUS: STATUS, COLUMNS: COLUMNS, DEFAULT_SETTINGS: DEFAULT_SETTINGS,
+    VERSION: VERSION, preApprovedOf: preApprovedOf, STATUS: STATUS, COLUMNS: COLUMNS, DEFAULT_SETTINGS: DEFAULT_SETTINGS,
     create: create, calcHours: calcHours, toMin: toMin, addDays: addDays, weekday: weekday, pad: pad,
     isPremiumDay: isPremiumDay, multiplierFor: multiplierFor, federalHolidays: federalHolidays,
     matchPunches: matchPunches, unapprovedExtra: unapprovedExtra, round2: round2, windowOf: windowOf, isTrue: isTrue
@@ -1027,15 +1032,15 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
       tNew: '신청서 작성', tMine: '내 신청', tApprove: '승인', tVerify: '근태 검증', tCpa: 'CPA 요청서', tAdmin: '관리', tDemo: '데모 도구',
       polH: '사전 승인이 완료된 오버타임만 인정됩니다',
       pol1: '오버타임은 시작 전에 신청하고, 시작 시각 전까지 승인이 완료되어야 합니다.',
-      pol2: '시작 시각까지 승인되지 않은 신청은 자동 만료되며, 사후 승인은 불가합니다.',
-      pol3: '사전 승인 없이 수행한 추가 근무는 출퇴근 기록과 관계없이 수당 지급 대상이 아닙니다.',
+      pol2: '시작 시각 이후에 신청하거나 승인된 건은 "사후"로 표시되며, 사유를 기재해야 합니다.',
+      pol3: '사전 승인 없이 수행한 추가 근무는 원칙적으로 인정되지 않으며, 사후 건은 요청서에 별도 표시되어 CPA에 전달됩니다.',
       pol4: '인정 시간은 승인 시간을 초과할 수 없으며, 출퇴근 기록(Time Clock)으로 검증 후 확정됩니다.',
       ackText: '위 사전 승인 원칙을 확인했으며, 승인되지 않은 오버타임은 인정되지 않음에 동의합니다.',
       empName: '직원명', empId: '사번', dept: '부서', rate: '시급 ($/hr)', multWk: '배율 (평일)', multHol: '배율 (토/휴일)',
       date: '날짜', day: '요일', otType: '작업 구분', start: '시작', end: '종료', brk: '휴게(분)', hours: 'OT 시간', satHol: '토/휴일',
       mult: '배율', estPay: '예상 수당($)', desc: '작업 내용 / 사유', addLine: '+ 행 추가', total: '합계', submit: '승인 요청',
       submitted: '신청되었습니다. 승인자에게 알림이 발송됩니다.', needAck: '사전 승인 원칙 확인란에 체크해 주세요.',
-      pastErr: '이미 시작된 시간은 신청할 수 없습니다 (사전 승인 원칙)', overlapErr: '같은 날짜에 겹치는 신청이 있습니다',
+      pastErr: '⚠ 이미 시작된 시간입니다 — 사후 신청으로 등록됩니다. 사유를 입력하세요 (예: 10/3 구두 사전 승인)', lateReason: '사후 등록 사유', lateReq: '사후 신청 건은 사유를 입력하세요', tagPre: '사전', tagPost: '사후', tagLateEntry: '사후 등록', lateApprWarn: '시작 시각이 지났습니다. 승인하면 "사후 승인"으로 기록됩니다.', lateApprConfirm: '사후 승인 확인', preBefore: '시작 {h} 전', postCount: '사후 승인', overlapErr: '같은 날짜에 겹치는 신청이 있습니다',
       descErr: '작업 내용을 입력하세요', month: '월', all: '전체', status: '상태', approvedBy: '승인자', approvedAt: '승인 시각',
       cancel: '취소', cancelled: '취소되었습니다', noData: '내역이 없습니다', recognized: '인정 시간', pay: '수당($)',
       approve: '승인', reject: '반려', rejectReason: '반려 사유 (필수)', comment: '의견 (선택)', untilStart: '시작까지', startedAgo: '시작 경과',
@@ -1070,7 +1075,7 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
       // CPA document
       dTitle: '추가 근무(오버타임) 수당 지급 요청서', dSub: 'Overtime Payment Request — 사전 승인 및 근태 검증 완료분',
       dTo: '수신', dFrom: '발신', dPeriod: '급여 대상 월', dIssue: '발행일', dPrep: '작성자', dNo: '문서번호',
-      dPol: '<b>사전 승인 원칙.</b> 본 요청서에는 오버타임 시작 시각 이전에 승인이 완료된 건만 포함되어 있습니다. 사전 승인 없이 수행된 추가 근무는 출퇴근 기록과 관계없이 인정되지 않으며 본 요청에서 제외되었습니다. 각 건의 인정 시간은 승인된 시간을 초과하지 않으며, 회사 출퇴근 기록(Time Clock)과 대조하여 확정되었습니다.',
+      dPol: '<b>사전 승인 원칙.</b> 오버타임은 시작 시각 이전 승인을 원칙으로 합니다. 각 건의 승인 시각과 사전/사후 여부를 "사전 승인" 칸에 표시하였으며, 시작 이후 승인된 <b>사후</b> 건은 사유와 함께 별도 표시하였습니다. 각 건의 인정 시간은 승인된 시간을 초과하지 않으며, 회사 출퇴근 기록(Time Clock)과 대조하여 확정되었습니다.', dPostCnt: '※ 사후 승인 {n}건 포함 ({h}시간) — 상세 내역의 ⚠ 표시 참조', dPreAll: '※ 전 건 사전 승인 완료',
       dReq: '아래 직원의 {m} 추가 근무 수당을 해당 급여에 반영하여 주시기 바랍니다.',
       dSum: '1. 직원별 요약', dDet: '2. 상세 내역', dEmp: '직원', dWkH: '평일 시간', dPrH: '토/휴일 시간', dTotH: '인정 시간 합계', dAmt: '금액($)',
       dAppr: '승인 시간', dApprAt: '사전 승인', dTc: '출퇴근 기록', dRec: '인정', dNotes: '산정 기준',
@@ -1086,15 +1091,15 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
       tNew: 'New Request', tMine: 'My Requests', tApprove: 'Approvals', tVerify: 'Time Clock Check', tCpa: 'CPA Request', tAdmin: 'Admin', tDemo: 'Demo Tools',
       polH: 'Only pre-approved overtime is recognized',
       pol1: 'Submit overtime before it starts; approval must be completed before the start time.',
-      pol2: 'Requests not approved by the start time expire automatically. Retroactive approval is not possible.',
-      pol3: 'Extra work performed without pre-approval is not paid as overtime, regardless of time-clock records.',
+      pol2: 'Requests submitted or approved after the start time are flagged as "post" and require a reason.',
+      pol3: 'Extra work without pre-approval is not recognized in principle; post-approved items are flagged separately on the CPA request.',
       pol4: 'Recognized hours cannot exceed approved hours and are confirmed against the Time Clock.',
       ackText: 'I have read the pre-approval policy and agree that overtime without prior approval will not be recognized.',
       empName: 'Employee Name', empId: 'Employee ID', dept: 'Department', rate: 'Base Rate ($/hr)', multWk: 'Multiplier (Weekday)', multHol: 'Multiplier (Sat/Holiday)',
       date: 'Date', day: 'Day', otType: 'OT Type (Task)', start: 'Start', end: 'End', brk: 'Break (min)', hours: 'OT Hours', satHol: 'Sat/Hol',
       mult: 'Mult.', estPay: 'Est. Pay ($)', desc: 'Description / Reason', addLine: '+ Add line', total: 'TOTAL', submit: 'Request approval',
       submitted: 'Submitted. Approvers have been notified.', needAck: 'Please acknowledge the pre-approval policy.',
-      pastErr: 'You cannot request time that has already started (pre-approval policy)', overlapErr: 'Overlaps another request on the same date',
+      pastErr: '⚠ This time has already started — it will be recorded as a post-entry. Enter a reason (e.g. verbal pre-approval on 10/3)', lateReason: 'Post-entry reason', lateReq: 'A reason is required for post-entries', tagPre: 'Pre', tagPost: 'Post', tagLateEntry: 'Post-entry', lateApprWarn: 'Start time has passed. Approving will record this as POST-approved.', lateApprConfirm: 'Confirm post-approval', preBefore: '{h} before start', postCount: 'Post-approved', overlapErr: 'Overlaps another request on the same date',
       descErr: 'Description is required', month: 'Month', all: 'All', status: 'Status', approvedBy: 'Approver', approvedAt: 'Approved at',
       cancel: 'Cancel', cancelled: 'Cancelled', noData: 'No records', recognized: 'Recognized', pay: 'Pay ($)',
       approve: 'Approve', reject: 'Reject', rejectReason: 'Reason for rejection (required)', comment: 'Comment (optional)', untilStart: 'Starts in', startedAgo: 'Started',
@@ -1128,7 +1133,7 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
       days: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
       dTitle: 'Overtime Payment Request', dSub: 'Pre-approved and time-clock verified overtime',
       dTo: 'To', dFrom: 'From', dPeriod: 'Pay period (month)', dIssue: 'Issue date', dPrep: 'Prepared by', dNo: 'Doc No.',
-      dPol: '<b>Pre-approval policy.</b> This request includes only overtime that was approved before its start time. Extra work performed without prior approval is not recognized, regardless of time-clock records, and has been excluded. Recognized hours for each item do not exceed the approved hours and were confirmed against the company Time Clock.',
+      dPol: '<b>Pre-approval policy.</b> Overtime must be approved before it starts. The approval time and pre/post status of each item are shown in the "Pre-approved" column; items approved after the start (<b>post</b>) are flagged with their reason. Recognized hours do not exceed the approved hours and were confirmed against the company Time Clock.', dPostCnt: '※ Includes {n} post-approved item(s) ({h} hrs) — see ⚠ in detail', dPreAll: '※ All items pre-approved',
       dReq: 'Please include the following overtime for {m} in the corresponding payroll.',
       dSum: '1. Summary by employee', dDet: '2. Detail', dEmp: 'Employee', dWkH: 'Weekday hrs', dPrH: 'Sat/Hol hrs', dTotH: 'Recognized hrs', dAmt: 'Amount ($)',
       dAppr: 'Approved', dApprAt: 'Pre-approved', dTc: 'Time Clock', dRec: 'Recog.', dNotes: 'Basis of calculation',
@@ -1176,7 +1181,7 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
   function mkErr(r) { var e = new Error(r.error || 'Error'); e.code = r.code; return e; }
   function errMsg(e) {
     var m = String(e.message || e);
-    if (e.code === 'PAST') return t('pastErr') + ' — ' + m.replace('PAST:', '');
+    if (e.code === 'LATE_REASON') return t('lateReq') + ' — ' + m.replace('LATE_REASON:', '');
     if (e.code === 'OVERLAP') return t('overlapErr') + ' — ' + m.replace('OVERLAP:', '');
     if (e.code === 'EXPIRED') return t('expiredErr');
     if (e.code === 'SELF') return t('selfErr');
@@ -1210,6 +1215,16 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
   function empById(id) { return S.data.employees.filter(function (e) { return e.id === id; })[0]; }
   function badge(st) { return '<span class="b ' + st + '">' + esc(t('st')[st] || st) + '</span>'; }
   function vbadge(v) { return v ? '<span class="b ' + v + '">' + esc(t('vr')[v] || v) + '</span>' : ''; }
+  function preTag(r, withLead) {
+    var pa = C.preApprovedOf(r), h = '';
+    if (r.lateEntry === 'Y') h += ' <span class="b REJECTED" title="' + esc(r.lateReason || '') + '">' + esc(t('tagLateEntry')) + '</span>';
+    if (pa === 'N') h += ' <span class="b REJECTED">⚠ ' + esc(t('tagPost')) + '</span>';
+    else if (pa === 'Y') {
+      var lead = (Date.parse(r.date + 'T' + r.start + ':00Z') - Date.parse(String(r.decidedAt).slice(0, 19) + 'Z')) / 60000;
+      h += ' <span class="b OK">✓ ' + esc(t('tagPre')) + (withLead && lead > 0 ? ' · ' + esc(t('preBefore', { h: fmtDur(lead) })) : '') + '</span>';
+    }
+    return h;
+  }
   function has(role) { var r = S.data.roles || []; return r.indexOf(role) >= 0 || (role !== 'employee' && r.indexOf('admin') >= 0); }
   function monthOf(d) { return String(d).slice(0, 7); }
   function thisMonth() { return nowET().slice(0, 7); }
@@ -1355,11 +1370,11 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
       '<div class="row" style="justify-content:flex-end"><button class="btn pri" id="btnSubmit">' + t('submit') + '</button></div></div>';
 
     function drawLines() {
-      var tb = $('#lnBody'); var minDate = nowET().slice(0, 10);
+      var tb = $('#lnBody');
       tb.innerHTML = S.lines.map(function (l, i) {
         var c = lineCalc(l);
         return '<tr data-i="' + i + '"' + (c.past ? ' style="background:#fdecea"' : '') + '>' +
-          '<td><input type="date" data-k="date" min="' + minDate + '" value="' + esc(l.date) + '" style="min-width:135px"></td>' +
+          '<td><input type="date" data-k="date" value="' + esc(l.date) + '" style="min-width:135px"></td>' +
           '<td class="calc">' + (l.date ? dayName(l.date) : '') + '</td>' +
           '<td><select data-k="otType" style="min-width:130px"><option value="">—</option>' + types.map(function (ty) { return '<option value="' + esc(ty) + '"' + (ty === l.otType ? ' selected' : '') + '>' + esc(typeLabel(ty)) + '</option>'; }).join('') + '</select></td>' +
           '<td><input type="time" data-k="start" value="' + esc(l.start) + '" step="900" style="min-width:100px"></td>' +
@@ -1369,7 +1384,7 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
           '<td class="calc">' + (l.date ? c.mult + '×' : '') + '</td><td class="calc">' + money(c.pay) + '</td>' +
           '<td><input type="text" data-k="description" value="' + esc(l.description) + '"></td>' +
           '<td>' + (S.lines.length > 1 ? '<button class="btn sm ghost" data-del="' + i + '">✕</button>' : '') + '</td></tr>' +
-          (c.past ? '<tr><td colspan="12" class="small" style="color:var(--red);background:#fdecea">' + esc(t('pastErr')) + '</td></tr>' : '');
+          (c.past ? '<tr data-i="' + i + '"><td colspan="12" class="small" style="color:var(--red);background:#fdecea"><div class="row"><span style="flex:1;min-width:240px">' + esc(t('pastErr')) + '</span><input type="text" data-k="lateReason" placeholder="' + esc(t('lateReason')) + '" value="' + esc(l.lateReason || '') + '" style="flex:1;min-width:220px;background:#fff"></div></td></tr>' : '');
       }).join('');
       var tot = S.lines.reduce(function (a, l) { var c = lineCalc(l); a.h += c.hours; a.p += c.pay; return a; }, { h: 0, p: 0 });
       $('#totH').textContent = n2(tot.h); $('#totP').textContent = money(tot.p);
@@ -1377,16 +1392,16 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
         inp.onchange = function () {
           var i = Number(inp.closest('tr').getAttribute('data-i')), k = inp.getAttribute('data-k');
           S.lines[i][k] = k === 'breakMin' ? Number(inp.value) || 0 : inp.value;
-          if (k !== 'description') drawLines();
+          if (k !== 'description' && k !== 'lateReason') drawLines();
         };
-        if (inp.getAttribute('data-k') === 'description') inp.oninput = inp.onchange;
+        if (inp.getAttribute('data-k') === 'description' || inp.getAttribute('data-k') === 'lateReason') inp.oninput = inp.onchange;
       });
       $$('[data-del]', tb).forEach(function (b) { b.onclick = function () { S.lines.splice(Number(b.getAttribute('data-del')), 1); drawLines(); }; });
     }
     drawLines();
     $('#addLn').onclick = function () {
       var last = S.lines[S.lines.length - 1] || blankLine();
-      S.lines.push({ date: last.date ? C.addDays(last.date, 1) : '', start: last.start, end: last.end, breakMin: last.breakMin, otType: last.otType, description: '' });
+      S.lines.push({ date: last.date ? C.addDays(last.date, 1) : '', start: last.start, end: last.end, breakMin: last.breakMin, otType: last.otType, description: '', lateReason: '' });
       drawLines();
     };
     $('#ack').onchange = function () { S.ack = this.checked; };
@@ -1395,7 +1410,7 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
       var lines = S.lines.filter(function (l) { return l.date; });
       if (!lines.length) return toast(t('date') + '?', true);
       for (var i = 0; i < lines.length; i++) {
-        if (lineCalc(lines[i]).past) return toast(t('pastErr'), true);
+        if (lineCalc(lines[i]).past && !String(lines[i].lateReason || '').trim()) return toast(t('lateReq'), true);
         if (!String(lines[i].description).trim()) return toast(t('descErr'), true);
       }
       var btn = this; btn.disabled = true;
@@ -1428,7 +1443,7 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
         list.map(function (r) {
           var canCancel = r.status === 'PENDING' || (r.status === 'APPROVED' && minsUntil(r.date, r.start) > 0);
           return '<tr><td class="mono">' + r.date + '</td><td>' + dayName(r.date) + (r.premium === 'Y' ? ' <span class="b Y">' + r.multiplier + '×</span>' : '') + '</td><td class="mono">' + r.start + '–' + r.end + (Number(r.breakMin) ? ' <span class="muted small">(-' + r.breakMin + 'm)</span>' : '') + '</td><td class="n">' + n2(r.hours) + '</td>' +
-            '<td>' + esc(typeLabel(r.otType)) + '</td><td>' + esc(r.description) + '</td><td>' + badge(r.status) + (r.decisionComment ? '<div class="small muted">' + esc(r.decisionComment) + '</div>' : '') + '</td>' +
+            '<td>' + esc(typeLabel(r.otType)) + '</td><td>' + esc(r.description) + '</td><td>' + badge(r.status) + preTag(r) + (r.lateReason ? '<div class="small" style="color:var(--red)">' + esc(t('lateReason')) + ': ' + esc(r.lateReason) + '</div>' : '') + (r.decisionComment ? '<div class="small muted">' + esc(r.decisionComment) + '</div>' : '') + '</td>' +
             '<td class="small">' + esc(r.decidedByName || '') + (r.decidedAt ? '<div class="muted mono">' + fmtTs(r.decidedAt) + '</div>' : '') + '</td>' +
             '<td class="n">' + (r.recognizedHours !== '' && r.recognizedHours != null && (r.status === 'VERIFIED' || r.status === 'CPA') ? n2(r.recognizedHours) : '') + '</td>' +
             '<td class="n">' + (r.pay ? money(r.pay) : '') + '</td>' +
@@ -1463,22 +1478,25 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
         var e = empById(r.empId), mins = minsUntil(r.date, r.start), self = r.empId === me;
         return '<div class="pending-card" data-id="' + r.id + '"><div class="row" style="justify-content:space-between"><div>' +
           '<div class="when">' + r.date + ' (' + dayName(r.date) + ') ' + r.start + '–' + r.end + ' · ' + n2(r.hours) + 'h' + (r.premium === 'Y' ? ' <span class="b Y">' + r.multiplier + '×</span>' : '') + '</div>' +
-          '<div><b>' + esc(empName(e) || r.empName) + '</b> · ' + esc(typeLabel(r.otType)) + ' · <span class="muted">' + t('submittedAt') + ' ' + fmtTs(r.submittedAt) + '</span></div>' +
-          '<div style="margin-top:4px">' + esc(r.description) + '</div></div>' +
+          '<div><b>' + esc(empName(e) || r.empName) + '</b> · ' + (r.otType ? esc(typeLabel(r.otType)) + ' · ' : '') + '<span class="muted">' + t('submittedAt') + ' ' + fmtTs(r.submittedAt) + '</span></div>' +
+          '<div style="margin-top:4px">' + esc(r.description) + '</div>' +
+          (r.lateEntry === 'Y' ? '<div class="small" style="color:var(--red);margin-top:4px"><span class="b REJECTED">' + esc(t('tagLateEntry')) + '</span> ' + esc(t('lateReason')) + ': ' + esc(r.lateReason) + '</div>' : '') +
+          (mins <= 0 ? '<div class="small" style="color:var(--red);font-weight:700;margin-top:4px">⚠ ' + esc(t('lateApprWarn')) + '</div>' : '') + '</div>' +
           '<div class="right"><div class="countdown ' + (mins < 120 ? 'soon' : 'ok') + '">' + (mins > 0 ? t('untilStart') + ' ' + fmtDur(mins) : t('startedAgo') + ' ' + fmtDur(mins)) + '</div></div></div>' +
           (self ? '<div class="small muted" style="margin-top:8px">' + t('selfErr') + '</div>' :
             '<div class="row" style="margin-top:10px"><input type="text" data-cmt placeholder="' + esc(t('comment')) + ' / ' + esc(t('rejectReason')) + '" style="flex:1;min-width:200px">' +
-            '<button class="btn ok" data-act="approve">' + t('approve') + '</button><button class="btn no" data-act="reject">' + t('reject') + '</button></div>') + '</div>';
+            '<button class="btn ok" data-act="approve"' + (mins <= 0 ? ' data-late="1"' : '') + '>' + t('approve') + '</button><button class="btn no" data-act="reject">' + t('reject') + '</button></div>') + '</div>';
       }).join('') : '<div class="card empty">' + t('noData') + '</div>') +
       '<h2 style="margin-top:24px">' + t('recent') + '</h2><div class="tw">' + (recent.length ? '<table class="t"><thead><tr><th>' + t('applicant') + '</th><th>' + t('date') + '</th><th>' + t('start') + '–' + t('end') + '</th><th class="n">' + t('hours') + '</th><th>' + t('status') + '</th><th>' + t('approvedBy') + '</th><th>' + t('approvedAt') + '</th><th>' + t('comment').replace(/\s*\(.*\)/, '') + '</th></tr></thead><tbody>' +
         recent.map(function (r) {
-          return '<tr><td>' + esc(empName(empById(r.empId)) || r.empName) + '</td><td class="mono">' + r.date + '</td><td class="mono">' + r.start + '–' + r.end + '</td><td class="n">' + n2(r.hours) + '</td><td>' + badge(r.status) + '</td><td>' + esc(r.decidedByName || '') + '</td><td class="mono small">' + fmtTs(r.decidedAt) + '</td><td class="small">' + esc(r.decisionComment || '') + '</td></tr>';
+          return '<tr><td>' + esc(empName(empById(r.empId)) || r.empName) + '</td><td class="mono">' + r.date + '</td><td class="mono">' + r.start + '–' + r.end + '</td><td class="n">' + n2(r.hours) + '</td><td>' + badge(r.status) + preTag(r) + '</td><td>' + esc(r.decidedByName || '') + '</td><td class="mono small">' + fmtTs(r.decidedAt) + '</td><td class="small">' + esc(r.decisionComment || '') + '</td></tr>';
         }).join('') + '</tbody></table>' : '<div class="empty">' + t('noData') + '</div>') + '</div>';
     $$('[data-act]', el).forEach(function (b) {
       b.onclick = function () {
         var card = b.closest('[data-id]'), id = card.getAttribute('data-id'), act = b.getAttribute('data-act');
         var cmt = $('[data-cmt]', card).value;
         if (act === 'reject' && !cmt.trim()) { $('[data-cmt]', card).focus(); return toast(t('rejectReason'), true); }
+        if (act === 'approve' && b.getAttribute('data-late') === '1' && b.getAttribute('data-armed') !== '1') { b.setAttribute('data-armed', '1'); b.textContent = t('lateApprConfirm'); b.style.background = 'var(--red)'; b.style.borderColor = 'var(--red)'; return toast(t('lateApprWarn'), true); }
         $$('button', card).forEach(function (x) { x.disabled = true; });
         call('decide', { id: id, decision: act, comment: cmt }).then(function () {
           toast(act === 'approve' ? t('approvedOk') : t('rejectedOk')); return load();
@@ -1495,10 +1513,10 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
       .sort(function (a, b) { return (a.date + a.empId + a.start).localeCompare(b.date + b.empId + b.start); });
     var V = S.verify && S.verify.month === m ? S.verify : null;
     var byId = {}; if (V) V.rows.forEach(function (x) { byId[x.id] = x.match; });
-    var expired = S.data.requests.filter(function (r) { return monthOf(r.date) === m && r.status === 'EXPIRED'; }).length;
+    var expired = reqs.filter(function (r) { return C.preApprovedOf(r) === 'N'; }).length;
     el.innerHTML = '<div class="row" style="justify-content:space-between"><h2>' + t('tVerify') + '</h2><div class="row">' + monthPicker('vmPick', m) + '<button class="btn pri" id="runV">' + t('runVerify') + '</button></div></div>' +
       '<p class="muted" style="margin-top:-6px">' + esc(t('verifyHelp')) + (V ? ' · <b>' + esc(t('loadedPunches', { n: V.punchCount })) + '</b>' : '') + '</p>' +
-      '<div class="stats">' + stat(t('st').APPROVED, String(reqs.filter(function (r) { return r.status === 'APPROVED'; }).length)) + stat(t('st').VERIFIED, String(reqs.filter(function (r) { return r.status === 'VERIFIED'; }).length)) + stat(t('st').CPA, String(reqs.filter(function (r) { return r.status === 'CPA'; }).length)) + stat(t('st').EXPIRED, String(expired)) + '</div>' +
+      '<div class="stats">' + stat(t('st').APPROVED, String(reqs.filter(function (r) { return r.status === 'APPROVED'; }).length)) + stat(t('st').VERIFIED, String(reqs.filter(function (r) { return r.status === 'VERIFIED'; }).length)) + stat(t('st').CPA, String(reqs.filter(function (r) { return r.status === 'CPA'; }).length)) + stat('⚠ ' + t('postCount'), String(expired)) + '</div>' +
       '<div class="tw">' + (reqs.length ? '<table class="t" id="vTable"><thead><tr><th><input type="checkbox" id="vAll"></th><th>' + t('applicant') + '</th><th>' + t('date') + '</th><th>' + t('dAppr') + '</th><th class="n">' + t('hours') + '</th><th>' + t('timeClock') + '</th><th class="n">' + t('overlap') + '</th><th>' + t('suggestion') + '</th><th>' + t('decision') + '</th><th class="n">' + t('recognized') + '</th><th>' + t('note') + '</th><th>' + t('status') + '</th></tr></thead><tbody>' +
         reqs.map(function (r) {
           var mt = byId[r.id], locked = r.status === 'CPA', done = r.status === 'VERIFIED';
@@ -1508,7 +1526,7 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
           return '<tr data-id="' + r.id + '"' + (locked ? ' class="dim"' : '') + '>' +
             '<td>' + (editable ? '<input type="checkbox" data-sel' + (mt.result === 'OK' ? ' checked' : '') + '>' : '') + '</td>' +
             '<td>' + esc(empName(empById(r.empId)) || r.empName) + '</td><td class="mono">' + r.date + ' ' + dayName(r.date) + '</td>' +
-            '<td class="mono">' + r.start + '–' + r.end + (Number(r.breakMin) ? '<div class="small muted">-' + r.breakMin + 'm</div>' : '') + '<div class="small muted">✓ ' + fmtTs(r.decidedAt) + '</div></td>' +
+            '<td class="mono">' + r.start + '–' + r.end + (Number(r.breakMin) ? '<div class="small muted">-' + r.breakMin + 'm</div>' : '') + '<div class="small muted">' + fmtTs(r.decidedAt) + '</div>' + preTag(r) + '</td>' +
             '<td class="n">' + n2(r.hours) + '</td>' +
             '<td class="mono small">' + (done || locked ? esc((r.actualIn || '') + (r.actualOut ? '–' + r.actualOut : '')) : (mt ? esc(mt.intervals.join(', ') || '—') + (mt.anomalies.length ? '<div style="color:var(--violet)">' + mt.anomalies.map(function (a) { return esc(t('an')[a] || a); }).join(', ') + '</div>' : '') : (ended ? '' : '<span class="muted">' + t('futureErr') + '</span>'))) + '</td>' +
             '<td class="n">' + (done || locked ? (r.actualHours !== '' ? n2(r.actualHours) : '') : (mt ? n2(mt.overlapHours) : '')) + '</td>' +
@@ -1584,7 +1602,7 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
       '<div class="card"><h3>' + t('verifiedReady') + ' — ' + m + '</h3><div class="tw">' + (ready.length ? '<table class="t"><thead><tr><th><input type="checkbox" id="cAll" checked></th><th>' + t('applicant') + '</th><th>' + t('date') + '</th><th>' + t('dAppr') + '</th><th class="n">' + t('hours') + '</th><th class="n">' + t('recognized') + '</th><th class="n">' + t('mult') + '</th><th class="n">' + t('pay') + '</th><th>' + t('suggestion') + '</th></tr></thead><tbody>' +
         ready.map(function (r) {
           var zero = !(Number(r.recognizedHours) > 0);
-          return '<tr><td><input type="checkbox" data-cid="' + r.id + '"' + (zero ? '' : ' checked') + '></td><td>' + esc(empName(empById(r.empId)) || r.empName) + '</td><td class="mono">' + r.date + ' ' + dayName(r.date) + '</td><td class="mono">' + r.start + '–' + r.end + '</td><td class="n">' + n2(r.hours) + '</td><td class="n"><b>' + n2(r.recognizedHours) + '</b></td><td class="n">' + r.multiplier + '×</td><td class="n">' + money(r.pay) + '</td><td>' + vbadge(r.verifyResult) + '</td></tr>';
+          return '<tr><td><input type="checkbox" data-cid="' + r.id + '"' + (zero ? '' : ' checked') + '></td><td>' + esc(empName(empById(r.empId)) || r.empName) + '</td><td class="mono">' + r.date + ' ' + dayName(r.date) + '</td><td class="mono">' + r.start + '–' + r.end + '</td><td class="n">' + n2(r.hours) + '</td><td class="n"><b>' + n2(r.recognizedHours) + '</b></td><td class="n">' + r.multiplier + '×</td><td class="n">' + money(r.pay) + '</td><td>' + vbadge(r.verifyResult) + preTag(r) + '</td></tr>';
         }).join('') + '</tbody></table>' : '<div class="empty">' + t('noData') + '</div>') + '</div>' +
       (ready.length ? '<div class="row" style="justify-content:flex-end;margin-top:10px"><button class="btn pri" id="cIssue">' + t('issue') + '</button></div>' : '') + '</div>' +
       '<div class="card"><h3>' + t('docHistory') + '</h3><div class="tw">' + (docs.length ? '<table class="t"><thead><tr><th>' + t('docNo') + '</th><th>' + t('month') + '</th><th>' + t('dIssue') + '</th><th>' + t('dPrep') + '</th><th class="n">' + t('recognized') + '</th><th class="n">' + t('dAmt') + '</th><th>' + t('status') + '</th><th></th></tr></thead><tbody>' +
@@ -1657,6 +1675,10 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
         '<tr><td>' + t('dTo') + '</td><td>' + esc(s.cpaName || 'CPA') + (s.cpaEmail ? '<br><span class="small">' + esc(s.cpaEmail) + '</span>' : '') + '</td><td>' + t('dFrom') + '</td><td>' + esc(s.companyName) + '</td></tr>' +
         '<tr><td>' + t('dPeriod') + '</td><td>' + esc(mLabel) + '</td><td>' + t('dPrep') + '</td><td>' + esc(d.createdBy) + '</td></tr></table>' +
         '<div class="pol">' + t('dPol') + '</div>' +
+        (function () {
+          var post = rows.filter(function (r) { return C.preApprovedOf(r) === 'N'; });
+          return '<p style="font-weight:700;' + (post.length ? 'color:#b42318' : 'color:#16794a') + '">' + esc(post.length ? t('dPostCnt', { n: post.length, h: n2(post.reduce(function (a, r) { return a + Number(r.recognizedHours || 0); }, 0)) }) : t('dPreAll')) + '</p>';
+        })() +
         '<p>' + esc(t('dReq', { m: mLabel })) + '</p>' +
         '<h4>' + t('dSum') + '</h4><table><tr><th>' + t('dEmp') + '</th><th class="n">' + t('rate') + '</th><th class="n">' + t('dWkH') + '</th><th class="n">' + t('dPrH') + '</th><th class="n">' + t('dTotH') + '</th><th class="n">' + t('dAmt') + '</th></tr>' +
         list.map(function (e) { return '<tr><td>' + esc(nm(e)) + '</td><td class="n">' + money(e.rate) + '</td><td class="n">' + n2(e.wk) + '</td><td class="n">' + n2(e.pr) + '</td><td class="n">' + n2(e.tot) + '</td><td class="n">' + money(e.amt) + '</td></tr>'; }).join('') +
@@ -1666,7 +1688,7 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
           return '<table class="det"><colgroup><col style="width:13%"><col style="width:22%"><col style="width:11%"><col style="width:15%"><col style="width:11%"><col style="width:7%"><col style="width:7%"><col style="width:5.5%"><col style="width:8.5%"></colgroup><tr><th colspan="9">' + esc(nm(e)) + (e.emp && e.emp.dept ? ' · ' + esc(e.emp.dept) : '') + '</th></tr><tr><th>' + t('date') + '</th><th>' + t('otType') + '</th><th>' + t('dAppr') + '</th><th>' + t('dApprAt') + '</th><th>' + t('dTc') + '</th><th class="n">' + t('hours') + '</th><th class="n">' + t('dRec') + '</th><th class="n">' + t('mult') + '</th><th class="n">' + t('dAmt') + '</th></tr>' +
             e.rows.map(function (r) {
               return '<tr><td class="mono">' + r.date + ' ' + dayName(r.date) + '</td><td>' + esc(typeLabel(r.otType)) + '<div class="small" style="color:#555">' + esc(r.description) + '</div></td><td class="mono">' + r.start + '–' + r.end + (Number(r.breakMin) ? '<br><span class="small">-' + r.breakMin + 'm</span>' : '') + '</td>' +
-                '<td class="small">' + esc(r.decidedByName) + '<br><span class="mono">' + fmtTs(r.decidedAt) + '</span></td><td class="mono">' + esc((r.actualIn || '—') + (r.actualOut ? '–' + r.actualOut : '')) + (r.verifyNote ? '<br><span class="small">' + esc(r.verifyNote) + '</span>' : '') + '</td>' +
+                '<td class="small">' + docPre(r) + '<br>' + esc(r.decidedByName) + '<br><span class="mono">' + fmtTs(r.decidedAt) + '</span>' + (r.lateReason ? '<br><span style="color:#b42318">' + esc(r.lateReason) + '</span>' : '') + '</td><td class="mono">' + esc((r.actualIn || '—') + (r.actualOut ? '–' + r.actualOut : '')) + (r.verifyNote ? '<br><span class="small">' + esc(r.verifyNote) + '</span>' : '') + '</td>' +
                 '<td class="n">' + n2(r.hours) + '</td><td class="n"><b>' + n2(r.recognizedHours) + '</b></td><td class="n">' + r.multiplier + '×</td><td class="n">' + money(r.pay) + '</td></tr>';
             }).join('') + '<tr class="tot"><td colspan="5">' + t('total') + '</td><td class="n">' + n2(e.rows.reduce(function (a, r) { return a + Number(r.hours); }, 0)) + '</td><td class="n">' + n2(e.tot) + '</td><td></td><td class="n">' + money(e.amt) + '</td></tr></table>';
         }).join('') +
@@ -1676,11 +1698,17 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
       return h;
     } finally { S.lang = save; }
   }
+  function docPre(r) {
+    var pa = C.preApprovedOf(r);
+    if (pa === 'N') return '<b style="color:#b42318">⚠ ' + esc(t('tagPost')) + '</b>';
+    var lead = (Date.parse(r.date + 'T' + r.start + ':00Z') - Date.parse(String(r.decidedAt).slice(0, 19) + 'Z')) / 60000;
+    return '<b style="color:#16794a">✓ ' + esc(t('tagPre')) + '</b> <span style="color:#555">(' + esc(t('preBefore', { h: fmtDur(lead) })) + ')</span>';
+  }
   function downloadCsv(d, L) {
     var save = S.lang; S.lang = L;
-    var head = [t('docNo'), t('dEmp'), t('empId'), t('date'), t('day'), t('otType'), t('desc'), t('start'), t('end'), t('brk'), t('hours'), t('approvedBy'), t('approvedAt'), t('dTc'), t('dRec'), t('rate'), t('mult'), t('dAmt'), t('note')];
+    var head = [t('docNo'), t('dEmp'), t('empId'), t('date'), t('day'), t('otType'), t('desc'), t('start'), t('end'), t('brk'), t('hours'), t('approvedBy'), t('approvedAt'), t('tagPre') + '/' + t('tagPost'), t('lateReason'), t('dTc'), t('dRec'), t('rate'), t('mult'), t('dAmt'), t('note')];
     var rows = docRows(d).map(function (r) {
-      return [d.id, empName(empById(r.empId)) || r.empName, r.empId, r.date, dayName(r.date), typeLabel(r.otType), r.description, r.start, r.end, r.breakMin, r.hours, r.decidedByName, fmtTs(r.decidedAt), (r.actualIn || '') + (r.actualOut ? '-' + r.actualOut : ''), r.recognizedHours, r.rate, r.multiplier, r.pay, r.verifyNote];
+      return [d.id, empName(empById(r.empId)) || r.empName, r.empId, r.date, dayName(r.date), typeLabel(r.otType), r.description, r.start, r.end, r.breakMin, r.hours, r.decidedByName, fmtTs(r.decidedAt), C.preApprovedOf(r) === 'N' ? t('tagPost') : t('tagPre'), r.lateReason || '', (r.actualIn || '') + (r.actualOut ? '-' + r.actualOut : ''), r.recognizedHours, r.rate, r.multiplier, r.pay, r.verifyNote];
     });
     S.lang = save;
     var csv = '﻿' + [head].concat(rows).map(function (r) { return r.map(function (v) { v = String(v == null ? '' : v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }).join(','); }).join('\r\n');
@@ -1812,12 +1840,15 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
         return call('decide', { token: adminTok, id: r.created[0].id, decision: 'approve', comment: '' });
       }).catch(function () { });
     });
-    // one late request that expires (not pre-approved)
+    // one post-entry: submitted and approved after the work was done
     chain = chain.then(function () {
       var d = base + '-22'; while (C.weekday(d) === 0 || C.weekday(d) === 6) d = C.addDays(d, 1);
-      demoStore.demo.setNow(d + 'T15:00');
+      demoStore.demo.setNow(d + 'T20:30');
       return call('login', { empId: 'E003', pin: '0000' }).then(function (lg) {
-        return call('submit', { token: lg.token, ack: true, lines: [{ date: d, start: '17:00', end: '19:00', breakMin: 0, otType: '기타|Other', description: 'Not approved in time' }] });
+        return call('submit', { token: lg.token, ack: true, lines: [{ date: d, start: '17:00', end: '19:00', breakMin: 0, otType: '기타|Other', description: 'Emergency tank leak response', lateReason: 'Verbal approval by manager at 16:40 (phone)' }] });
+      }).then(function (r) {
+        demoStore.demo.setNow(C.addDays(d, 1) + 'T09:00');
+        return call('decide', { token: adminTok, id: r.created[0].id, decision: 'approve', comment: 'Confirmed verbal approval' });
       });
     }).catch(function () { });
     return chain.then(function () { demoStore.demo.setNow(realNow.slice(0, 16)); });
