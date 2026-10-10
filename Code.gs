@@ -654,6 +654,16 @@ var OTCore = (function () {
           });
           done.forEach(function (r) { var up = r._update; delete r._update; if (up) store.upsert('Requests', 'id', r); else store.append('Requests', r); });
           log(u, 'finalizeClock', '', done.map(function (r) { return r.id + ':' + r.recognizedHours + (r.preApproved === 'N' ? '(exception)' : ''); }).join(','));
+          done.forEach(function (r) {
+            try {
+              var emp = emps.filter(function (e) { return e.id === r.empId; })[0];
+              if (!emp || !emp.email) return;
+              store.sendMail(emp.email, '[JNFAM OT] 최종 승인 / Final approved — ' + r.date,
+                '<div style="font-family:Arial,sans-serif;font-size:14px"><p>OT가 최종 승인되었습니다. / Your overtime has been final-approved.</p>'
+                + '<p>' + r.date + ' · ' + r.start + '–' + r.end + ' · ' + r.recognizedHours + 'h' + (r.preApproved === 'N' ? ' · ⚠ 사후 / Post' : '') + '</p>'
+                + (r.verifyNote ? '<p>Note: ' + esc(r.verifyNote) + '</p>' : '') + '<p>' + esc(u.nameEn || u.name) + ' · ' + now + ' ET</p></div>', '');
+            } catch (e) { }
+          });
           return { requests: done };
         });
       },
@@ -866,15 +876,25 @@ var OTCore = (function () {
       /** Employee: own Time Clock days with overtime + processing status (own data only). */
       myClock: function (p) {
         var u = auth(p);
-        var month = String(p.month || '').slice(0, 7);
-        if (!/^\d{4}-\d{2}$/.test(month)) err('MONTH', 'Invalid month');
+        var from, to;
+        if (p.from && p.to) { from = String(p.from); to = String(p.to); }
+        else {
+          var month = String(p.month || '').slice(0, 7);
+          if (!/^\d{4}-\d{2}$/.test(month)) err('MONTH', 'Invalid month');
+          from = month + '-01'; to = addDays(addDays(month + '-28', 4).slice(0, 7) + '-01', -1);
+        }
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) err('PERIOD', 'Invalid period');
+        if (addDays(from, 186) < to) err('PERIOD', 'Period too long (max 6 months)');
         if (!u.timeClockName) return { days: [], linked: false };
-        var from = month + '-01', to = addDays(addDays(month + '-28', 4).slice(0, 7) + '-01', -1);
         var s = settings(), hol = holidays();
+        var months = [];
+        for (var mm = from.slice(0, 7); mm <= to.slice(0, 7); mm = addDays(mm + '-28', 4).slice(0, 7)) months.push(mm);
         var all = punchesFor(from, to);
         var mine = {}; mine[u.id] = all[u.id] || [];
-        var reqs = store.read('Requests').filter(function (r) { return r.empId === u.id && String(r.date).slice(0, 7) === month && [STATUS.REJECTED, STATUS.CANCELLED, STATUS.EXPIRED].indexOf(r.status) < 0; });
-        var days = clockCandidates(mine, [u], hol, s, month).map(function (c) {
+        var reqs = store.read('Requests').filter(function (r) { return r.empId === u.id && r.date >= from && r.date <= to && [STATUS.REJECTED, STATUS.CANCELLED, STATUS.EXPIRED].indexOf(r.status) < 0; });
+        var cc = [];
+        months.forEach(function (m) { cc = cc.concat(clockCandidates(mine, [u], hol, s, m)); });
+        var days = cc.filter(function (c) { return c.date >= from && c.date <= to; }).map(function (c) {
           var rs = reqs.filter(function (r) { return r.date === c.date; });
           var rj = store.read('Requests').filter(function (r) { return r.empId === u.id && r.date === c.date && r.status === STATUS.REJECTED; }).pop();
           return { id: rs.length ? rs[0].id : '', rejectNote: !rs.length && rj ? rj.decisionComment : '', description: rs.length ? rs[0].description : '', date: c.date, offDay: c.offDay, sched: c.sched, punches: c.punches, anomalies: c.anomalies, otLabel: c.otLabel, otHours: c.otHours,
