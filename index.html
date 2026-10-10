@@ -960,6 +960,25 @@ var OTCore = (function () {
         return { ok: true };
       },
 
+      /** Employee: own Time Clock days with overtime + processing status (own data only). */
+      myClock: function (p) {
+        var u = auth(p);
+        var month = String(p.month || '').slice(0, 7);
+        if (!/^\d{4}-\d{2}$/.test(month)) err('MONTH', 'Invalid month');
+        if (!u.timeClockName) return { days: [], linked: false };
+        var from = month + '-01', to = addDays(addDays(month + '-28', 4).slice(0, 7) + '-01', -1);
+        var s = settings(), hol = holidays();
+        var all = punchesFor(from, to);
+        var mine = {}; mine[u.id] = all[u.id] || [];
+        var reqs = store.read('Requests').filter(function (r) { return r.empId === u.id && String(r.date).slice(0, 7) === month && [STATUS.REJECTED, STATUS.CANCELLED, STATUS.EXPIRED].indexOf(r.status) < 0; });
+        var days = clockCandidates(mine, [u], hol, s, month).map(function (c) {
+          var rs = reqs.filter(function (r) { return r.date === c.date; });
+          return { date: c.date, offDay: c.offDay, sched: c.sched, punches: c.punches, anomalies: c.anomalies, otLabel: c.otLabel, otHours: c.otHours,
+            status: rs.length ? rs[0].status : '', recognizedHours: rs.length ? rs[0].recognizedHours : '', preApproved: rs.length ? rs[0].preApproved : '', docId: rs.length ? rs[0].docId : '' };
+        });
+        return { days: days, linked: true, startDate: s.startDate || '' };
+      },
+
       timelog: function (p) {
         var u = auth(p); need(u, 'admin');
         var by = punchesFor(p.from, p.to);
@@ -1177,7 +1196,7 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
     ko: {
       appSub: '오버타임 사전 승인', login: '로그인', emp: '직원', pin: 'PIN', loginBtn: '로그인', logout: '로그아웃',
       changePin: 'PIN 변경', demoBanner: '데모 모드 — 이 브라우저에만 저장됩니다. 가상 시계·샘플 출퇴근 기록으로 테스트하세요.',
-      tNew: '신청서 작성', tMine: '내 신청', tApprove: '승인', tVerify: 'OT 확인·최종 승인', excludeSel: '선택 항목 제외', excludeReq: '제외 사유를 비고 칸에 입력하세요 (예: 이전 방식으로 이미 지급)', excluded: '제외되었습니다', dupDoc: '이미 다른 CPA 요청서에 포함된 건입니다', sStart: '시스템 적용 시작일 (이전 기록은 표시 안 함)', dedupNote: '같은 직원·같은 날짜는 한 번만 처리됩니다. 이미 다른 방식으로 처리한 건은 비고에 사유를 적고 "제외"하면 다시 표시되지 않습니다.', candH: '출퇴근 기록 기준 OT', candHelp: '정규 근무시간 이후(휴무일·휴일은 전체) 근무가 출퇴근 기록에서 자동으로 표시됩니다. 사전에 구두·메일로 확인한 건은 "사전 확인"에 체크하고 인정 시간을 확인한 뒤 최종 승인하세요. 사전 확인이 없는 건은 특별한 경우에만 예외 사유를 적어 승인합니다("사후"로 표시).', otWin: 'OT 구간', clockH: 'OT 시간(기록)', preChk: '사전 확인', task: '작업 내용', excNote: '비고 / 예외 사유', exceptionReq: '사전 확인이 없는 건은 예외 사유를 입력해야 승인할 수 있습니다', runFirst: '"Time Clock 대조 실행"을 누르면 출퇴근 기록에서 이번 달 OT가 자동으로 표시됩니다.', reqSecH: '직원 앱 신청 건', candCount: 'OT 후보', dupErr: '이미 처리된 날짜입니다', sEmpReq: '직원 앱 신청 사용', preByMgr: '사전 확인 (관리자)', tMineOt: '내 OT', tCpa: 'CPA 요청서', tAdmin: '관리', tDemo: '데모 도구',
+      tNew: '신청서 작성', tMine: '내 신청', tApprove: '승인', tVerify: 'OT 확인·최종 승인', myClockH: '내 출퇴근 기록 (OT 발생일)', myClockHelp: '출퇴근 기록에서 정규 근무시간 이후(휴무일은 전체) 근무가 있는 날입니다. 관리자가 확인해 최종 승인하면 임금에 반영됩니다. 기록이 틀리거나 퇴근 기록이 빠졌으면 관리자에게 알려 주세요.', waitMgr: '관리자 확인 대기', notLinked: '출퇴근 기록과 연결되지 않았습니다. 관리자에게 문의하세요.', fixPunch: '퇴근 기록 누락 — 관리자에게 알려 주세요', beforeStart: '시스템 적용 전', excludeSel: '선택 항목 제외', excludeReq: '제외 사유를 비고 칸에 입력하세요 (예: 이전 방식으로 이미 지급)', excluded: '제외되었습니다', dupDoc: '이미 다른 CPA 요청서에 포함된 건입니다', sStart: '시스템 적용 시작일 (이전 기록은 표시 안 함)', dedupNote: '같은 직원·같은 날짜는 한 번만 처리됩니다. 이미 다른 방식으로 처리한 건은 비고에 사유를 적고 "제외"하면 다시 표시되지 않습니다.', candH: '출퇴근 기록 기준 OT', candHelp: '정규 근무시간 이후(휴무일·휴일은 전체) 근무가 출퇴근 기록에서 자동으로 표시됩니다. 사전에 구두·메일로 확인한 건은 "사전 확인"에 체크하고 인정 시간을 확인한 뒤 최종 승인하세요. 사전 확인이 없는 건은 특별한 경우에만 예외 사유를 적어 승인합니다("사후"로 표시).', otWin: 'OT 구간', clockH: 'OT 시간(기록)', preChk: '사전 확인', task: '작업 내용', excNote: '비고 / 예외 사유', exceptionReq: '사전 확인이 없는 건은 예외 사유를 입력해야 승인할 수 있습니다', runFirst: '"Time Clock 대조 실행"을 누르면 출퇴근 기록에서 이번 달 OT가 자동으로 표시됩니다.', reqSecH: '직원 앱 신청 건', candCount: 'OT 후보', dupErr: '이미 처리된 날짜입니다', sEmpReq: '직원 앱 신청 사용', preByMgr: '사전 확인 (관리자)', tMineOt: '내 OT', tCpa: 'CPA 요청서', tAdmin: '관리', tDemo: '데모 도구',
       polH: '사전 승인을 받은 오버타임만 인정됩니다 (특별한 경우 제외)',
       pol1: '오버타임은 시작 전에 관리자에게 구두 또는 메일로 사전 승인을 받아야 합니다.',
       pol2: '사전 승인 없는 오버타임은 특별한 경우를 제외하고 인정되지 않습니다.',
@@ -1236,7 +1255,7 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
     en: {
       appSub: 'Overtime Pre-Approval', login: 'Sign in', emp: 'Employee', pin: 'PIN', loginBtn: 'Sign in', logout: 'Sign out',
       changePin: 'Change PIN', demoBanner: 'Demo mode — data is stored in this browser only. Use the virtual clock and sample time-clock data to test.',
-      tNew: 'New Request', tMine: 'My Requests', tApprove: 'Approvals', tVerify: 'OT Review & Final Approval', excludeSel: 'Exclude selected', excludeReq: 'Enter a reason in the note to exclude (e.g. already paid the old way)', excluded: 'Excluded', dupDoc: 'Already included in another CPA request', sStart: 'System start date (earlier records hidden)', dedupNote: 'Each employee-day can be processed only once. For items already handled another way, enter a reason in the note and click "Exclude" — they will not show up again.', candH: 'Overtime from Time Clock', candHelp: 'Work after scheduled hours (all hours on days off/holidays) is listed automatically from the Time Clock. Tick "Pre-confirmed" for overtime you approved in advance (verbally or by email), check the hours, then final-approve. Without pre-confirmation, approve only in special cases with an exception reason (flagged "Post").', otWin: 'OT window', clockH: 'OT hrs (clock)', preChk: 'Pre-confirmed', task: 'Task', excNote: 'Note / exception reason', exceptionReq: 'An exception reason is required to approve without pre-confirmation', runFirst: 'Click "Run Time Clock check" to list this month\'s overtime from the Time Clock.', reqSecH: 'Employee-submitted requests', candCount: 'OT candidates', dupErr: 'Already processed for this date', sEmpReq: 'Employees submit requests in app', preByMgr: 'Pre-confirmed (manager)', tMineOt: 'My Overtime', tCpa: 'CPA Request', tAdmin: 'Admin', tDemo: 'Demo Tools',
+      tNew: 'New Request', tMine: 'My Requests', tApprove: 'Approvals', tVerify: 'OT Review & Final Approval', myClockH: 'My Time Clock (overtime days)', myClockHelp: 'Days where the Time Clock shows work after scheduled hours (all hours on days off). Hours are paid once the manager confirms and final-approves them. If a record is wrong or an OUT punch is missing, please tell your manager.', waitMgr: 'Awaiting manager review', notLinked: 'Your account is not linked to the Time Clock. Please contact your manager.', fixPunch: 'Missing OUT punch — tell your manager', beforeStart: 'Before system start', excludeSel: 'Exclude selected', excludeReq: 'Enter a reason in the note to exclude (e.g. already paid the old way)', excluded: 'Excluded', dupDoc: 'Already included in another CPA request', sStart: 'System start date (earlier records hidden)', dedupNote: 'Each employee-day can be processed only once. For items already handled another way, enter a reason in the note and click "Exclude" — they will not show up again.', candH: 'Overtime from Time Clock', candHelp: 'Work after scheduled hours (all hours on days off/holidays) is listed automatically from the Time Clock. Tick "Pre-confirmed" for overtime you approved in advance (verbally or by email), check the hours, then final-approve. Without pre-confirmation, approve only in special cases with an exception reason (flagged "Post").', otWin: 'OT window', clockH: 'OT hrs (clock)', preChk: 'Pre-confirmed', task: 'Task', excNote: 'Note / exception reason', exceptionReq: 'An exception reason is required to approve without pre-confirmation', runFirst: 'Click "Run Time Clock check" to list this month\'s overtime from the Time Clock.', reqSecH: 'Employee-submitted requests', candCount: 'OT candidates', dupErr: 'Already processed for this date', sEmpReq: 'Employees submit requests in app', preByMgr: 'Pre-confirmed (manager)', tMineOt: 'My Overtime', tCpa: 'CPA Request', tAdmin: 'Admin', tDemo: 'Demo Tools',
       polH: 'Only pre-approved overtime is recognized (except in special cases)',
       pol1: 'Get pre-approval from your manager (verbally or by email) before working overtime.',
       pol2: 'Overtime without pre-approval is not recognized except in special cases.',
@@ -1597,7 +1616,7 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
     el.innerHTML = '<div class="row" style="justify-content:space-between"><h2>' + (empReq ? t('tMine') : t('tMineOt')) + '</h2>' + monthPicker('mmPick', S.mineMonth, true) + '</div>' +
       (empReq ? '' : policyBox()) +
       '<div class="stats">' + (empReq ? stat(t('st').PENDING, n2(sum.p) + 'h') + stat(t('st').APPROVED, n2(sum.a) + 'h') : '') + stat(t('st').VERIFIED + ' (' + t('recognized') + ')', n2(sum.v) + 'h') + stat(t('pay'), '$' + money(sum.pay)) + '</div>' +
-      '<div class="tw">' + (list.length ? '<table class="t"><thead><tr><th>' + t('date') + '</th><th>' + t('day') + '</th><th>' + t('start') + '–' + t('end') + '</th><th class="n">' + t('hours') + '</th><th>' + t('otType') + '</th><th>' + t('desc') + '</th><th>' + t('status') + '</th><th>' + t('approvedBy') + '</th><th class="n">' + t('recognized') + '</th><th class="n">' + t('pay') + '</th><th></th></tr></thead><tbody>' +
+      (!list.length && !empReq ? '' : '<div class="tw">') + (!list.length && !empReq ? '' : list.length ? '<table class="t"><thead><tr><th>' + t('date') + '</th><th>' + t('day') + '</th><th>' + t('start') + '–' + t('end') + '</th><th class="n">' + t('hours') + '</th><th>' + t('otType') + '</th><th>' + t('desc') + '</th><th>' + t('status') + '</th><th>' + t('approvedBy') + '</th><th class="n">' + t('recognized') + '</th><th class="n">' + t('pay') + '</th><th></th></tr></thead><tbody>' +
         list.map(function (r) {
           var canCancel = r.status === 'PENDING' || (r.status === 'APPROVED' && minsUntil(r.date, r.start) > 0);
           return '<tr><td class="mono">' + r.date + '</td><td>' + dayName(r.date) + (r.premium === 'Y' ? ' <span class="b Y">' + r.multiplier + '×</span>' : '') + '</td><td class="mono">' + r.start + '–' + r.end + (Number(r.breakMin) ? ' <span class="muted small">(-' + r.breakMin + 'm)</span>' : '') + '</td><td class="n">' + n2(r.hours) + '</td>' +
@@ -1606,8 +1625,23 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
             '<td class="n">' + (r.recognizedHours !== '' && r.recognizedHours != null && (r.status === 'VERIFIED' || r.status === 'CPA') ? n2(r.recognizedHours) : '') + '</td>' +
             '<td class="n">' + (r.pay ? money(r.pay) : '') + '</td>' +
             '<td>' + (canCancel ? '<button class="btn sm no" data-cancel="' + r.id + '">' + t('cancel') + '</button>' : '') + '</td></tr>';
-        }).join('') + '</tbody></table>' : '<div class="empty">' + t('noData') + '</div>') + '</div>';
+        }).join('') + '</tbody></table>' : '<div class="empty">' + t('noData') + '</div>') + (!list.length && !empReq ? '' : '</div>');
     bindMonth('mmPick', function (v) { S.mineMonth = v; render(); });
+    var box = document.createElement('div'); box.id = 'myClock'; box.style.marginTop = '22px';
+    box.innerHTML = '<h3>' + esc(t('myClockH')) + '</h3><div class="card empty">…</div>';
+    el.appendChild(box);
+    var mm = S.mineMonth || thisMonth();
+    call('myClock', { month: mm }).then(function (d) {
+      if (!$('#myClock')) return;
+      if (!d.linked) { box.innerHTML = '<h3>' + esc(t('myClockH')) + '</h3><div class="card empty">' + esc(t('notLinked')) + '</div>'; return; }
+      box.innerHTML = '<h3>' + esc(t('myClockH')) + '</h3><p class="muted small" style="margin-top:-4px">' + esc(t('myClockHelp')) + '</p><div class="tw">' + (d.days.length ? '<table class="t"><thead><tr><th>' + t('date') + '</th><th>' + t('sched') + '</th><th>' + t('timeClock') + '</th><th>' + t('otWin') + '</th><th class="n">' + t('clockH') + '</th><th class="n">' + t('recognized') + '</th><th>' + t('status') + '</th></tr></thead><tbody>' +
+        d.days.map(function (x) {
+          var st = x.status ? badge(x.status) + (x.preApproved === 'N' ? ' <span class="b REJECTED">⚠ ' + esc(t('tagPost')) + '</span>' : '') + (x.docId ? '<div class="small muted">' + esc(x.docId) + '</div>' : '')
+            : (d.startDate && x.date < d.startDate ? '<span class="muted small">' + esc(t('beforeStart')) + '</span>'
+            : (x.anomalies.length ? '<span class="small" style="color:var(--violet);font-weight:700">' + esc(t('fixPunch')) + '</span>' : '<span class="b PENDING">' + esc(t('waitMgr')) + '</span>'));
+          return '<tr><td class="mono">' + x.date + ' ' + dayName(x.date) + (x.offDay ? ' <span class="b Y">' + t('offDay') + '</span>' : '') + '</td><td class="mono small">' + esc(x.sched) + '</td><td class="mono small">' + esc(x.punches || '—') + '</td><td class="mono small">' + esc(x.otLabel || '—') + '</td><td class="n">' + n2(x.otHours) + '</td><td class="n">' + (x.recognizedHours !== '' && x.status !== 'EXCLUDED' ? '<b>' + n2(x.recognizedHours) + '</b>' : '') + '</td><td>' + st + '</td></tr>';
+        }).join('') + '</tbody></table>' : '<div class="empty">' + t('noData') + '</div>') + '</div>';
+    }).catch(function (e) { if ($('#myClock')) box.innerHTML = '<h3>' + esc(t('myClockH')) + '</h3><div class="card empty">' + esc(errMsg(e)) + '</div>'; });
     $$('[data-cancel]', el).forEach(function (b) {
       b.onclick = function () {
         if (b.getAttribute('data-armed') !== '1') { b.setAttribute('data-armed', '1'); b.textContent = t('cancel') + '?'; return; }
