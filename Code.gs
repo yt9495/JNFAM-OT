@@ -30,7 +30,7 @@ var OTCore = (function () {
     Requests: ['id', 'groupId', 'empId', 'empName', 'date', 'start', 'end', 'breakMin', 'otType', 'description',
       'hours', 'premium', 'multiplier', 'status', 'ack', 'submittedAt', 'decidedAt', 'decidedBy', 'decidedByName',
       'decisionComment', 'actualIn', 'actualOut', 'actualHours', 'verifyResult', 'recognizedHours', 'rate', 'pay',
-      'verifyNote', 'verifiedAt', 'verifiedBy', 'docId'],
+      'verifyNote', 'verifiedAt', 'verifiedBy', 'docId', 'lateEntry', 'lateReason', 'preApproved'],
     Holidays: ['date', 'name'],
     Settings: ['key', 'value'],
     Docs: ['id', 'month', 'createdAt', 'createdBy', 'requestIds', 'totalHours', 'totalPay', 'status', 'note'],
@@ -321,7 +321,8 @@ var OTCore = (function () {
       var html = '<div style="font-family:Arial,sans-serif;font-size:14px">'
         + '<p><b>' + esc(user.name) + '</b> 님이 오버타임 사전 승인을 요청했습니다. / ' + esc(user.nameEn || user.name) + ' submitted an overtime pre-approval request.</p>'
         + '<table border="1" cellpadding="6" style="border-collapse:collapse"><tr><th>Date</th><th>Time</th><th>Hours</th><th>Type</th><th>Description</th></tr>' + rows + '</table>'
-        + '<p style="color:#b45309">※ 시작 시각 전에 승인되지 않으면 자동 만료되어 인정되지 않습니다. / Requests not approved before the start time expire automatically.</p>'
+        + (reqs.some(function (r) { return r.lateEntry === 'Y'; }) ? '<p style="color:#b42318">⚠ 시작 시각 이후 등록된 사후 신청이 포함되어 있습니다. / Includes entries submitted after the start time (post-entry).</p>' : '')
+        + '<p style="color:#b45309">※ 시작 시각 이후 승인 시 "사후 승인"으로 표시됩니다. / Approvals after the start time are flagged as post-approved.</p>'
         + (s.appUrl ? '<p><a href="' + s.appUrl + '">' + s.appUrl + '</a></p>' : '') + '</div>';
       store.sendMail(to.join(','), '[JNFAM OT] 승인 요청 / Approval request — ' + (user.nameEn || user.name), html, s.ccEmail);
     }
@@ -332,6 +333,7 @@ var OTCore = (function () {
       var html = '<div style="font-family:Arial,sans-serif;font-size:14px">'
         + '<p>오버타임 신청이 <b>' + (ok ? '승인' : '반려') + '</b>되었습니다. / Your overtime request was <b>' + (ok ? 'APPROVED' : 'REJECTED') + '</b>.</p>'
         + '<p>' + r.date + ' ' + r.start + '–' + r.end + ' (' + r.hours + 'h) · ' + esc(r.otType) + '</p>'
+        + (ok && r.preApproved === 'N' ? '<p style="color:#b42318">⚠ 사후 승인 / Post-approved (approved after start)</p>' : '')
         + (r.decisionComment ? '<p>Comment: ' + esc(r.decisionComment) + '</p>' : '')
         + '<p>Approver: ' + esc(decider.nameEn || decider.name) + ' · ' + r.decidedAt + ' ET</p></div>';
       store.sendMail(emp.email, '[JNFAM OT] ' + (ok ? '승인 Approved' : '반려 Rejected') + ' — ' + r.date, html, '');
@@ -372,7 +374,6 @@ var OTCore = (function () {
 
       bootstrap: function (p) {
         var u = auth(p);
-        expireStale();
         var isAdmin = has(u, 'admin'), isApprover = has(u, 'approver') || isAdmin;
         var reqs = store.read('Requests');
         if (!isApprover) reqs = reqs.filter(function (r) { return r.empId === u.id; });
@@ -408,7 +409,8 @@ var OTCore = (function () {
             if (!/^\d{1,2}:\d{2}$/.test(l.start || '') || !/^\d{1,2}:\d{2}$/.test(l.end || '')) err('TIME', 'Invalid time (line ' + (i + 1) + ')');
             var start = pad(Math.floor(toMin(l.start) / 60)) + ':' + pad(toMin(l.start) % 60);
             var end = pad(Math.floor(toMin(l.end) / 60)) + ':' + pad(toMin(l.end) % 60);
-            if ((l.date + 'T' + start) <= now.slice(0, 16)) err('PAST', 'PAST:' + l.date + ' ' + start);
+            var late = (l.date + 'T' + start) <= now.slice(0, 16);
+            if (late && !String(l.lateReason || '').trim()) err('LATE_REASON', 'LATE_REASON:' + l.date + ' ' + start);
             var hours = calcHours(start, end, l.breakMin);
             if (hours <= 0) err('HOURS', 'OT hours must be > 0 (line ' + (i + 1) + ')');
             if (hours > 16) err('HOURS', 'OT hours too long (line ' + (i + 1) + ')');
@@ -425,7 +427,8 @@ var OTCore = (function () {
               groupId: groupId, empId: empId, empName: u.name, date: l.date, start: start, end: end,
               breakMin: String(Number(l.breakMin) || 0), otType: String(l.otType || ''), description: String(l.description || '').trim(),
               hours: String(hours), premium: isPremiumDay(l.date, hol, s) ? 'Y' : 'N', multiplier: String(multiplierFor(l.date, hol, s)),
-              status: STATUS.PENDING, ack: 'TRUE', submittedAt: now
+              status: STATUS.PENDING, ack: 'TRUE', submittedAt: now,
+              lateEntry: late ? 'Y' : 'N', lateReason: late ? String(l.lateReason).trim() : ''
             };
             created.push(r);
           });
@@ -443,7 +446,7 @@ var OTCore = (function () {
           if (!r) err('NOTFOUND');
           if (r.empId !== u.id && !has(u, 'admin')) err('FORBIDDEN');
           var now = store.nowET();
-          if (!(r.status === STATUS.PENDING || (r.status === STATUS.APPROVED && (r.date + 'T' + r.start) > now.slice(0, 16)))) err('STATE', 'Cannot cancel in this state');
+          if (!(r.status === STATUS.PENDING || (r.status === STATUS.APPROVED && ((r.date + 'T' + r.start) > now.slice(0, 16) || has(u, 'admin'))))) err('STATE', 'Cannot cancel in this state');
           r.status = STATUS.CANCELLED;
           r.decisionComment = (r.decisionComment ? r.decisionComment + ' / ' : '') + 'Cancelled by ' + u.name + ' ' + now;
           store.upsert('Requests', 'id', r);
@@ -463,13 +466,8 @@ var OTCore = (function () {
           if (r.status !== STATUS.PENDING) err('STATE', 'Already processed: ' + r.status);
           var now = store.nowET();
           if (p.decision === 'approve') {
-            if ((r.date + 'T' + r.start) <= now.slice(0, 16)) {
-              r.status = STATUS.EXPIRED;
-              r.decisionComment = 'Auto-expired: approval attempted after start (' + now + ')';
-              store.upsert('Requests', 'id', r);
-              err('EXPIRED', 'EXPIRED');
-            }
             r.status = STATUS.APPROVED;
+            r.preApproved = (r.date + 'T' + r.start) > now.slice(0, 16) ? 'Y' : 'N';
           } else {
             if (!String(p.comment || '').trim()) err('COMMENT', 'Reason required');
             r.status = STATUS.REJECTED;
@@ -652,8 +650,15 @@ var OTCore = (function () {
     return { handle: handle };
   }
 
+  /** 'Y' approved before start · 'N' approved after start · '' not decided */
+  function preApprovedOf(r) {
+    if (r.preApproved === 'Y' || r.preApproved === 'N') return r.preApproved;
+    if (!r.decidedAt || !r.date || !r.start) return '';
+    return String(r.decidedAt).slice(0, 16) < (r.date + 'T' + r.start) ? 'Y' : 'N';
+  }
+
   return {
-    VERSION: VERSION, STATUS: STATUS, COLUMNS: COLUMNS, DEFAULT_SETTINGS: DEFAULT_SETTINGS,
+    VERSION: VERSION, preApprovedOf: preApprovedOf, STATUS: STATUS, COLUMNS: COLUMNS, DEFAULT_SETTINGS: DEFAULT_SETTINGS,
     create: create, calcHours: calcHours, toMin: toMin, addDays: addDays, weekday: weekday, pad: pad,
     isPremiumDay: isPremiumDay, multiplierFor: multiplierFor, federalHolidays: federalHolidays,
     matchPunches: matchPunches, unapprovedExtra: unapprovedExtra, round2: round2, windowOf: windowOf, isTrue: isTrue
