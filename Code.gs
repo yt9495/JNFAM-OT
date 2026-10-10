@@ -531,23 +531,34 @@ var OTCore = (function () {
       verifyPreview: function (p) {
         var u = auth(p);
         need(u, 'admin');
-        var month = p.month;
-        var from = month + '-01', to = addDays(addDays(month + '-28', 4).slice(0, 7) + '-01', -1);
+        var from, to;
+        if (p.from && p.to) { from = p.from; to = p.to; }
+        else { from = p.month + '-01'; to = addDays(addDays(p.month + '-28', 4).slice(0, 7) + '-01', -1); }
+        if (from > to) err('PERIOD', 'Invalid period');
+        var months = [];
+        for (var mm = from.slice(0, 7); mm <= to.slice(0, 7); mm = addDays(mm + '-28', 4).slice(0, 7)) months.push(mm);
         var s = settings(), hol = holidays();
         var punches = punchesFor(from, to);
-        var reqs = store.read('Requests').filter(function (r) { return String(r.date).slice(0, 7) === month; });
+        var inR = function (d) { return d >= from && d <= to; };
+        var reqs = store.read('Requests').filter(function (r) { return inR(String(r.date)); });
         var rows = reqs.filter(function (r) { return [STATUS.APPROVED, STATUS.VERIFIED, STATUS.CPA].indexOf(r.status) >= 0; })
           .map(function (r) { return { id: r.id, match: matchPunches(punches[r.empId] || [], r, s.graceMinutes) }; });
         var emps = employees().filter(function (e) { return isTrue(e.active) && e.timeClockName; });
+        var cands = [], unap = [];
+        months.forEach(function (m) {
+          cands = cands.concat(clockCandidates(punches, emps, hol, s, m));
+          unap = unap.concat(unapprovedExtra(punches, emps, reqs, hol, s, m));
+        });
         return {
+          from: from, to: to,
           rows: rows,
-          unapproved: unapprovedExtra(punches, emps, reqs, hol, s, month),
-          candidates: clockCandidates(punches, emps, hol, s, month).map(function (c) {
+          unapproved: unap.filter(function (x) { return inR(x.date); }),
+          candidates: cands.filter(function (c) { return inR(c.date); }).map(function (c) {
             c.records = reqs.filter(function (r) { return r.empId === c.empId && r.date === c.date && [STATUS.REJECTED, STATUS.CANCELLED, STATUS.EXPIRED].indexOf(r.status) < 0; })
               .map(function (r) { return r.id; });
             return c;
-          }),
-          punchCount: Object.keys(punches).reduce(function (a, k) { return a + punches[k].length; }, 0)
+          }).sort(function (a, b) { return (a.empId + a.date).localeCompare(b.empId + b.date); }),
+          punchCount: Object.keys(punches).reduce(function (a, k) { return a + punches[k].filter(function (x) { return inR(x.date); }).length; }, 0)
         };
       },
 
