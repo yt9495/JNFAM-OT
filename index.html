@@ -210,10 +210,10 @@ var OTCore = (function () {
     Requests: ['id', 'groupId', 'empId', 'empName', 'date', 'start', 'end', 'breakMin', 'otType', 'description',
       'hours', 'premium', 'multiplier', 'status', 'ack', 'submittedAt', 'decidedAt', 'decidedBy', 'decidedByName',
       'decisionComment', 'actualIn', 'actualOut', 'actualHours', 'verifyResult', 'recognizedHours', 'rate', 'pay',
-      'verifyNote', 'verifiedAt', 'verifiedBy', 'docId', 'lateEntry', 'lateReason', 'preApproved', 'source'],
+      'verifyNote', 'verifiedAt', 'verifiedBy', 'docId', 'lateEntry', 'lateReason', 'preApproved', 'source', 'preMethod', 'preBy'],
     Holidays: ['date', 'name'],
     Settings: ['key', 'value'],
-    Docs: ['id', 'month', 'createdAt', 'createdBy', 'requestIds', 'totalHours', 'totalPay', 'status', 'note'],
+    Docs: ['id', 'month', 'createdAt', 'createdBy', 'requestIds', 'totalHours', 'totalPay', 'status', 'note', 'periodFrom', 'periodTo'],
     Log: ['ts', 'user', 'action', 'target', 'detail']
   };
 
@@ -228,7 +228,7 @@ var OTCore = (function () {
     graceMinutes: '10',
     reviewMinutes: '15',
     employeeRequests: 'FALSE',
-    startDate: '',
+    startDate: '2026-09-25',
     cpaName: '',
     cpaEmail: '',
     adminEmail: '',
@@ -785,7 +785,8 @@ var OTCore = (function () {
             if (!emp) err('NOTFOUND', it.empId);
             if (!/^\d{4}-\d{2}-\d{2}$/.test(it.date || '')) err('DATE', 'Invalid date');
             var dup = all.concat(done).filter(function (r) { return r.empId === it.empId && r.date === it.date && [STATUS.REJECTED, STATUS.CANCELLED, STATUS.EXPIRED].indexOf(r.status) < 0; });
-            if (dup.length) err('DUP', 'DUP:' + emp.name + ' ' + it.date);
+            var claim = dup.filter(function (r) { return r.status === STATUS.PENDING && r.source === 'CLOCK'; })[0];
+            if (dup.length && !(claim && dup.length === 1)) err('DUP', 'DUP:' + emp.name + ' ' + it.date);
             var c = cand[it.empId + '|' + it.date];
             if (!c || !(c.otHours > 0)) err('NOCLOCK', 'NOCLOCK:' + emp.name + ' ' + it.date);
             it.otStart = c.otStart; it.otEnd = c.otEnd; it.clockHours = c.otHours;
@@ -813,10 +814,80 @@ var OTCore = (function () {
               verifyNote: String(it.note || ''), verifiedAt: now, verifiedBy: u.nameEn || u.name, docId: '',
               lateEntry: 'N', lateReason: pre ? '' : String(it.note || ''), preApproved: pre ? 'Y' : 'N', source: 'CLOCK'
             };
+            if (claim) {
+              r.id = claim.id; r.submittedAt = claim.submittedAt; r.preMethod = claim.preMethod || ''; r.preBy = claim.preBy || '';
+              if (!r.description) r.description = claim.description || '';
+              r._update = true;
+            }
             done.push(r);
           });
-          done.forEach(function (r) { store.append('Requests', r); });
+          done.forEach(function (r) { var up = r._update; delete r._update; if (up) store.upsert('Requests', 'id', r); else store.append('Requests', r); });
           log(u, 'finalizeClock', '', done.map(function (r) { return r.id + ':' + r.recognizedHours + (r.preApproved === 'N' ? '(exception)' : ''); }).join(','));
+          return { requests: done };
+        });
+      },
+
+      /** Employee claims an overtime day straight from their own Time Clock record. */
+      claimClock: function (p) {
+        var u = auth(p);
+        var s = settings(), hol = holidays();
+        var date = String(p.date || '');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) err('DATE', 'Invalid date');
+        if (!u.timeClockName) err('NOTLINKED', 'Not linked to Time Clock');
+        if (!String(p.task || '').trim()) err('TASK', 'Task description required');
+        var method = { verbal: 1, email: 1, none: 1 }[p.preMethod] ? p.preMethod : '';
+        if (!method) err('PREMETHOD', 'Select how overtime was pre-approved');
+        if (method === 'none' && !String(p.note || '').trim()) err('EXCEPTION', 'EXCEPTION:' + date);
+        var m = date.slice(0, 7);
+        var from = m + '-01', to = addDays(addDays(m + '-28', 4).slice(0, 7) + '-01', -1);
+        var mine = {}; mine[u.id] = punchesFor(from, to)[u.id] || [];
+        var c = clockCandidates(mine, [u], hol, s, m).filter(function (x) { return x.date === date; })[0];
+        if (!c || !(c.otHours > 0)) err('NOCLOCK', 'NOCLOCK:' + date);
+        return store.lock(function () {
+          var all = store.read('Requests'), now = store.nowET();
+          var dup = all.filter(function (r) { return r.empId === u.id && r.date === date && [STATUS.REJECTED, STATUS.CANCELLED, STATUS.EXPIRED].indexOf(r.status) < 0; });
+          if (dup.length) err('DUP', 'DUP:' + date + ' (' + dup[0].status + ')');
+          var ps = String(c.punches || '').split(', ');
+          var r = {
+            id: 'OT' + date.slice(2, 4) + date.slice(5, 7) + '-' + ('000' + (all.length + 1)).slice(-4) + '-' + store.uuid().slice(0, 4).toUpperCase(),
+            groupId: 'CLOCK', empId: u.id, empName: u.name, date: date, start: c.otStart, end: c.otEnd, breakMin: '0',
+            otType: '', description: String(p.task).trim(), hours: String(c.otHours),
+            premium: isPremiumDay(date, hol, s) ? 'Y' : 'N', multiplier: String(multiplierFor(date, hol, s)),
+            status: STATUS.PENDING, ack: 'TRUE', submittedAt: now,
+            actualIn: (ps[0] || '').split('–')[0], actualOut: (ps[ps.length - 1] || '').split('–')[1] || '', actualHours: String(c.otHours),
+            lateEntry: 'N', lateReason: method === 'none' ? String(p.note).trim() : '', verifyNote: String(p.note || '').trim(),
+            source: 'CLOCK', preMethod: method, preBy: String(p.preBy || '').trim()
+          };
+          store.append('Requests', r);
+          log(u, 'claimClock', r.id, date + ' ' + c.otHours + 'h ' + method);
+          try {
+            var to2 = employees().filter(function (e) { return isTrue(e.active) && (has(e, 'admin') || has(e, 'approver')) && e.email && e.id !== u.id; }).map(function (e) { return e.email; });
+            if (s.adminEmail) to2.push(s.adminEmail);
+            to2 = to2.filter(function (v, i, a) { return a.indexOf(v) === i; });
+            if (to2.length) store.sendMail(to2.join(','), '[JNFAM OT] OT 신청 / Overtime claim — ' + (u.nameEn || u.name) + ' ' + date,
+              '<div style="font-family:Arial,sans-serif;font-size:14px"><p><b>' + esc(u.name) + '</b> 님이 OT를 신청했습니다. / ' + esc(u.nameEn || u.name) + ' submitted an overtime claim.</p>'
+              + '<p>' + date + ' · Time Clock ' + esc(c.punches) + ' · OT ' + esc(c.otLabel) + ' (' + c.otHours + 'h)</p>'
+              + '<p>작업 / Task: ' + esc(r.description) + '<br>사전 승인 / Pre-approval: ' + ({ verbal: '구두 / Verbal', email: '메일 / Email', none: '없음 / None' })[method] + (r.preBy ? ' (' + esc(r.preBy) + ')' : '') + (r.verifyNote ? '<br>비고 / Note: ' + esc(r.verifyNote) : '') + '</p>'
+              + (s.appUrl ? '<p><a href="' + s.appUrl + '">' + s.appUrl + '</a></p>' : '') + '</div>', s.ccEmail);
+          } catch (e) { log(u, 'mail-error', r.id, String(e)); }
+          return { request: r };
+        });
+      },
+
+      rejectClaim: function (p) {
+        var u = auth(p); need(u, 'admin');
+        var items = p.items || [];
+        return store.lock(function () {
+          var all = store.read('Requests'), now = store.nowET(), done = [];
+          items.forEach(function (it) {
+            var r = all.filter(function (x) { return x.id === it.id; })[0];
+            if (!r || r.status !== STATUS.PENDING) err('STATE', 'STATE:' + it.id);
+            if (!String(it.note || '').trim()) err('COMMENT', 'Reason required');
+            r.status = STATUS.REJECTED; r.decidedAt = now; r.decidedBy = u.id; r.decidedByName = u.nameEn || u.name; r.decisionComment = String(it.note).trim();
+            store.upsert('Requests', 'id', r); done.push(r);
+            try { mailApplicant(r, u, settings()); } catch (e) { }
+          });
+          log(u, 'rejectClaim', '', done.map(function (r) { return r.id; }).join(','));
           return { requests: done };
         });
       },
@@ -873,10 +944,11 @@ var OTCore = (function () {
           var all = store.read('Requests'), now = store.nowET();
           var sel = all.filter(function (r) { return (p.ids || []).indexOf(r.id) >= 0; });
           if (!sel.length) err('EMPTY', 'Nothing selected');
+          var pf = p.from || (p.month ? p.month + '-01' : ''), pt = p.to || (p.month ? addDays(addDays(p.month + '-28', 4).slice(0, 7) + '-01', -1) : '');
           var seen = {};
           sel.forEach(function (r) {
             if (r.status !== STATUS.VERIFIED) err('STATE', r.id + ' is not verified');
-            if (String(r.date).slice(0, 7) !== p.month) err('MONTH', r.id);
+            if (r.date < pf || r.date > pt) err('MONTH', 'Out of period: ' + r.id);
             var k = r.empId + '|' + r.date;
             if (seen[k]) err('DUPDOC', 'DUPDOC:' + r.empName + ' ' + r.date);
             seen[k] = 1;
@@ -884,10 +956,10 @@ var OTCore = (function () {
             if (prev) err('DUPDOC', 'DUPDOC:' + r.empName + ' ' + r.date + ' → ' + prev.docId);
           });
           var docs = store.read('Docs');
-          var prefix = 'OT-' + p.month.replace('-', '') + '-';
+          var prefix = 'OT-' + now.slice(0, 10).replace(/-/g, '') + '-';
           var n = docs.filter(function (d) { return String(d.id).indexOf(prefix) === 0; }).length + 1;
           var doc = {
-            id: prefix + ('0' + n).slice(-2), month: p.month, createdAt: now, createdBy: u.nameEn || u.name,
+            id: prefix + ('0' + n).slice(-2), month: pt.slice(0, 7), periodFrom: pf, periodTo: pt, createdAt: now, createdBy: u.nameEn || u.name,
             requestIds: sel.map(function (r) { return r.id; }).join(','),
             totalHours: String(round2(sel.reduce(function (a, r) { return a + Number(r.recognizedHours || 0); }, 0))),
             totalPay: String(round2(sel.reduce(function (a, r) { return a + Number(r.pay || 0); }, 0))),
@@ -973,7 +1045,8 @@ var OTCore = (function () {
         var reqs = store.read('Requests').filter(function (r) { return r.empId === u.id && String(r.date).slice(0, 7) === month && [STATUS.REJECTED, STATUS.CANCELLED, STATUS.EXPIRED].indexOf(r.status) < 0; });
         var days = clockCandidates(mine, [u], hol, s, month).map(function (c) {
           var rs = reqs.filter(function (r) { return r.date === c.date; });
-          return { date: c.date, offDay: c.offDay, sched: c.sched, punches: c.punches, anomalies: c.anomalies, otLabel: c.otLabel, otHours: c.otHours,
+          var rj = store.read('Requests').filter(function (r) { return r.empId === u.id && r.date === c.date && r.status === STATUS.REJECTED; }).pop();
+          return { id: rs.length ? rs[0].id : '', rejectNote: !rs.length && rj ? rj.decisionComment : '', description: rs.length ? rs[0].description : '', date: c.date, offDay: c.offDay, sched: c.sched, punches: c.punches, anomalies: c.anomalies, otLabel: c.otLabel, otHours: c.otHours,
             status: rs.length ? rs[0].status : '', recognizedHours: rs.length ? rs[0].recognizedHours : '', preApproved: rs.length ? rs[0].preApproved : '', docId: rs.length ? rs[0].docId : '' };
         });
         return { days: days, linked: true, startDate: s.startDate || '' };
@@ -1196,7 +1269,7 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
     ko: {
       appSub: '오버타임 사전 승인', login: '로그인', emp: '직원', pin: 'PIN', loginBtn: '로그인', logout: '로그아웃',
       changePin: 'PIN 변경', demoBanner: '데모 모드 — 이 브라우저에만 저장됩니다. 가상 시계·샘플 출퇴근 기록으로 테스트하세요.',
-      tNew: '신청서 작성', tMine: '내 신청', tApprove: '승인', tVerify: 'OT 확인·최종 승인', myClockH: '내 출퇴근 기록 (OT 발생일)', myClockHelp: '출퇴근 기록에서 정규 근무시간 이후(휴무일은 전체) 근무가 있는 날입니다. 관리자가 확인해 최종 승인하면 임금에 반영됩니다. 기록이 틀리거나 퇴근 기록이 빠졌으면 관리자에게 알려 주세요.', waitMgr: '관리자 확인 대기', notLinked: '출퇴근 기록과 연결되지 않았습니다. 관리자에게 문의하세요.', fixPunch: '퇴근 기록 누락 — 관리자에게 알려 주세요', beforeStart: '시스템 적용 전', excludeSel: '선택 항목 제외', excludeReq: '제외 사유를 비고 칸에 입력하세요 (예: 이전 방식으로 이미 지급)', excluded: '제외되었습니다', dupDoc: '이미 다른 CPA 요청서에 포함된 건입니다', sStart: '시스템 적용 시작일 (이전 기록은 표시 안 함)', dedupNote: '같은 직원·같은 날짜는 한 번만 처리됩니다. 이미 다른 방식으로 처리한 건은 비고에 사유를 적고 "제외"하면 다시 표시되지 않습니다.', candH: '출퇴근 기록 기준 OT', candHelp: '정규 근무시간 이후(휴무일·휴일은 전체) 근무가 출퇴근 기록에서 자동으로 표시됩니다. 사전에 구두·메일로 확인한 건은 "사전 확인"에 체크하고 인정 시간을 확인한 뒤 최종 승인하세요. 사전 확인이 없는 건은 특별한 경우에만 예외 사유를 적어 승인합니다("사후"로 표시).', otWin: 'OT 구간', clockH: 'OT 시간(기록)', preChk: '사전 확인', task: '작업 내용', excNote: '비고 / 예외 사유', exceptionReq: '사전 확인이 없는 건은 예외 사유를 입력해야 승인할 수 있습니다', runFirst: '"Time Clock 대조 실행"을 누르면 출퇴근 기록에서 이번 달 OT가 자동으로 표시됩니다.', reqSecH: '직원 앱 신청 건', candCount: 'OT 후보', dupErr: '이미 처리된 날짜입니다', sEmpReq: '직원 앱 신청 사용', preByMgr: '사전 확인 (관리자)', tMineOt: '내 OT', tCpa: 'CPA 요청서', tAdmin: '관리', tDemo: '데모 도구',
+      tNew: '신청서 작성', tMine: '내 신청', tApprove: '승인', tVerify: 'OT 확인·최종 승인', claim: '신청', claimH: 'OT 신청', claimed: '신청됨 · 관리자 확인 대기', claimOk: '신청되었습니다. 관리자 확인 후 최종 승인됩니다.', preHow: '사전 승인 방법', preVerbal: '구두', preEmail: '메일', preNone: '사전 승인 없음 (예외)', preBy: '승인한 사람', claimNote: '비고 / 예외 사유', taskReq: '작업 내용을 입력하세요', preReq: '사전 승인 방법을 선택하세요', rejectedPrev: '반려됨 — 다시 신청 가능', empClaim: '직원 신청', rejectSel: '선택 신청 반려', rejectReq: '반려 사유를 비고 칸에 입력하세요', rejected: '반려했습니다', periodFrom: '기간 시작', periodTo: '기간 종료', period: '대상 기간', claimHelp: 'OT가 있는 날 오른쪽의 "신청"을 눌러 작업 내용과 사전 승인 방법을 입력하세요. 같은 날은 한 번만 신청할 수 있습니다.', myClockH: '내 출퇴근 기록 (OT 발생일)', myClockHelp: '출퇴근 기록에서 정규 근무시간 이후(휴무일은 전체) 근무가 있는 날입니다. 관리자가 확인해 최종 승인하면 임금에 반영됩니다. 기록이 틀리거나 퇴근 기록이 빠졌으면 관리자에게 알려 주세요.', waitMgr: '관리자 확인 대기', notLinked: '출퇴근 기록과 연결되지 않았습니다. 관리자에게 문의하세요.', fixPunch: '퇴근 기록 누락 — 관리자에게 알려 주세요', beforeStart: '시스템 적용 전', excludeSel: '선택 항목 제외', excludeReq: '제외 사유를 비고 칸에 입력하세요 (예: 이전 방식으로 이미 지급)', excluded: '제외되었습니다', dupDoc: '이미 다른 CPA 요청서에 포함된 건입니다', sStart: '시스템 적용 시작일 (이전 기록은 표시 안 함)', dedupNote: '같은 직원·같은 날짜는 한 번만 처리됩니다. 이미 다른 방식으로 처리한 건은 비고에 사유를 적고 "제외"하면 다시 표시되지 않습니다.', candH: '출퇴근 기록 기준 OT', candHelp: '정규 근무시간 이후(휴무일·휴일은 전체) 근무가 출퇴근 기록에서 자동으로 표시됩니다. 사전에 구두·메일로 확인한 건은 "사전 확인"에 체크하고 인정 시간을 확인한 뒤 최종 승인하세요. 사전 확인이 없는 건은 특별한 경우에만 예외 사유를 적어 승인합니다("사후"로 표시).', otWin: 'OT 구간', clockH: 'OT 시간(기록)', preChk: '사전 확인', task: '작업 내용', excNote: '비고 / 예외 사유', exceptionReq: '사전 확인이 없는 건은 예외 사유를 입력해야 승인할 수 있습니다', runFirst: '"Time Clock 대조 실행"을 누르면 출퇴근 기록에서 이번 달 OT가 자동으로 표시됩니다.', reqSecH: '직원 앱 신청 건', candCount: 'OT 후보', dupErr: '이미 처리된 날짜입니다', sEmpReq: '직원 앱 신청 사용', preByMgr: '사전 확인 (관리자)', tMineOt: '내 OT', tCpa: 'CPA 요청서', tAdmin: '관리', tDemo: '데모 도구',
       polH: '사전 승인을 받은 오버타임만 인정됩니다 (특별한 경우 제외)',
       pol1: '오버타임은 시작 전에 관리자에게 구두 또는 메일로 사전 승인을 받아야 합니다.',
       pol2: '사전 승인 없는 오버타임은 특별한 경우를 제외하고 인정되지 않습니다.',
@@ -1236,14 +1309,14 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
       scenarioHelp: '지난달·이번 달에 사전 승인된 신청 여러 건을 만들어 검증/요청서 기능을 바로 시험할 수 있게 합니다.',
       confirmReset: '초기화하려면 한 번 더 누르세요', yes: '예', no: '아니오', close: '닫기',
       st: { PENDING: '승인 대기', APPROVED: '사전 승인', REJECTED: '반려', CANCELLED: '취소', EXPIRED: '만료(불인정)', VERIFIED: '최종 승인', CPA: 'CPA 제출', EXCLUDED: '제외' },
-      vr: { OK: '일치', PARTIAL: '부분', NO_RECORD: '기록 없음', NO_OVERLAP: '시간 불일치', CHECK: '확인 필요', MANUAL: '수동 조정' },
+      vr: { CLOCK: '출퇴근 기록', OK: '일치', PARTIAL: '부분', NO_RECORD: '기록 없음', NO_OVERLAP: '시간 불일치', CHECK: '확인 필요', MANUAL: '수동 조정' },
       an: { MISSING_OUT: '퇴근 기록 누락', DOUBLE_IN: '출근 중복', OUT_WITHOUT_IN: '출근 기록 누락' },
       days: ['일', '월', '화', '수', '목', '금', '토'],
       // CPA document
       dTitle: '추가 근무(오버타임) 수당 지급 요청서', dSub: 'Overtime Payment Request — 출퇴근 기록 확인 및 최종 승인분',
-      dTo: '수신', dFrom: '발신', dPeriod: '급여 대상 월', dIssue: '발행일', dPrep: '작성자', dNo: '문서번호',
+      dTo: '수신', dFrom: '발신', dPeriod: '대상 기간', dIssue: '발행일', dPrep: '작성자', dNo: '문서번호',
       dPol: '<b>사전 승인 및 근태 확인 원칙.</b> 본 요청서의 각 건은 출퇴근 기록(Time Clock)으로 실제 근무를 확인하고 최종 승인된 시간입니다. 사전 승인 없이 수행된 오버타임은 특별한 경우를 제외하고 인정되지 않으며, 예외로 인정된 건은 "사후"로 표시하고 사유를 기재하였습니다.', dPostCnt: '※ 사후 승인 {n}건 포함 ({h}시간) — 상세 내역의 ⚠ 표시 참조', dPreAll: '※ 전 건 사전 승인 완료',
-      dReq: '아래 직원의 {m} 추가 근무 수당을 해당 급여에 반영하여 주시기 바랍니다.',
+      dReq: '아래 직원의 {m} 기간 추가 근무 수당을 다음 급여에 반영하여 주시기 바랍니다.',
       dSum: '1. 직원별 요약', dDet: '2. 상세 내역', dEmp: '직원', dWkH: '평일 시간', dPrH: '토/휴일 시간', dTotH: '인정 시간 합계', dAmt: '금액($)',
       dAppr: '승인 시간', dApprAt: '사전 승인 / 최종 승인', dTc: '출퇴근 기록', dRec: '인정', dNotes: '산정 기준',
       dN1: '수당 = 인정 시간 × 시급 × 배율 (평일 {wk}배, 토요일·회사 휴일 {pr}배).',
@@ -1255,7 +1328,7 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
     en: {
       appSub: 'Overtime Pre-Approval', login: 'Sign in', emp: 'Employee', pin: 'PIN', loginBtn: 'Sign in', logout: 'Sign out',
       changePin: 'Change PIN', demoBanner: 'Demo mode — data is stored in this browser only. Use the virtual clock and sample time-clock data to test.',
-      tNew: 'New Request', tMine: 'My Requests', tApprove: 'Approvals', tVerify: 'OT Review & Final Approval', myClockH: 'My Time Clock (overtime days)', myClockHelp: 'Days where the Time Clock shows work after scheduled hours (all hours on days off). Hours are paid once the manager confirms and final-approves them. If a record is wrong or an OUT punch is missing, please tell your manager.', waitMgr: 'Awaiting manager review', notLinked: 'Your account is not linked to the Time Clock. Please contact your manager.', fixPunch: 'Missing OUT punch — tell your manager', beforeStart: 'Before system start', excludeSel: 'Exclude selected', excludeReq: 'Enter a reason in the note to exclude (e.g. already paid the old way)', excluded: 'Excluded', dupDoc: 'Already included in another CPA request', sStart: 'System start date (earlier records hidden)', dedupNote: 'Each employee-day can be processed only once. For items already handled another way, enter a reason in the note and click "Exclude" — they will not show up again.', candH: 'Overtime from Time Clock', candHelp: 'Work after scheduled hours (all hours on days off/holidays) is listed automatically from the Time Clock. Tick "Pre-confirmed" for overtime you approved in advance (verbally or by email), check the hours, then final-approve. Without pre-confirmation, approve only in special cases with an exception reason (flagged "Post").', otWin: 'OT window', clockH: 'OT hrs (clock)', preChk: 'Pre-confirmed', task: 'Task', excNote: 'Note / exception reason', exceptionReq: 'An exception reason is required to approve without pre-confirmation', runFirst: 'Click "Run Time Clock check" to list this month\'s overtime from the Time Clock.', reqSecH: 'Employee-submitted requests', candCount: 'OT candidates', dupErr: 'Already processed for this date', sEmpReq: 'Employees submit requests in app', preByMgr: 'Pre-confirmed (manager)', tMineOt: 'My Overtime', tCpa: 'CPA Request', tAdmin: 'Admin', tDemo: 'Demo Tools',
+      tNew: 'New Request', tMine: 'My Requests', tApprove: 'Approvals', tVerify: 'OT Review & Final Approval', claim: 'Claim', claimH: 'Overtime claim', claimed: 'Claimed · awaiting manager', claimOk: 'Submitted. Your manager will review and final-approve it.', preHow: 'How was it pre-approved?', preVerbal: 'Verbal', preEmail: 'Email', preNone: 'No pre-approval (exception)', preBy: 'Approved by', claimNote: 'Note / exception reason', taskReq: 'Enter the task', preReq: 'Select how it was pre-approved', rejectedPrev: 'Rejected — you may claim again', empClaim: 'Employee claim', rejectSel: 'Reject selected claims', rejectReq: 'Enter a rejection reason in the note', rejected: 'Rejected', periodFrom: 'From', periodTo: 'To', period: 'Period', claimHelp: 'Click "Claim" on a day with overtime and enter the task and how it was pre-approved. Each day can be claimed only once.', myClockH: 'My Time Clock (overtime days)', myClockHelp: 'Days where the Time Clock shows work after scheduled hours (all hours on days off). Hours are paid once the manager confirms and final-approves them. If a record is wrong or an OUT punch is missing, please tell your manager.', waitMgr: 'Awaiting manager review', notLinked: 'Your account is not linked to the Time Clock. Please contact your manager.', fixPunch: 'Missing OUT punch — tell your manager', beforeStart: 'Before system start', excludeSel: 'Exclude selected', excludeReq: 'Enter a reason in the note to exclude (e.g. already paid the old way)', excluded: 'Excluded', dupDoc: 'Already included in another CPA request', sStart: 'System start date (earlier records hidden)', dedupNote: 'Each employee-day can be processed only once. For items already handled another way, enter a reason in the note and click "Exclude" — they will not show up again.', candH: 'Overtime from Time Clock', candHelp: 'Work after scheduled hours (all hours on days off/holidays) is listed automatically from the Time Clock. Tick "Pre-confirmed" for overtime you approved in advance (verbally or by email), check the hours, then final-approve. Without pre-confirmation, approve only in special cases with an exception reason (flagged "Post").', otWin: 'OT window', clockH: 'OT hrs (clock)', preChk: 'Pre-confirmed', task: 'Task', excNote: 'Note / exception reason', exceptionReq: 'An exception reason is required to approve without pre-confirmation', runFirst: 'Click "Run Time Clock check" to list this month\'s overtime from the Time Clock.', reqSecH: 'Employee-submitted requests', candCount: 'OT candidates', dupErr: 'Already processed for this date', sEmpReq: 'Employees submit requests in app', preByMgr: 'Pre-confirmed (manager)', tMineOt: 'My Overtime', tCpa: 'CPA Request', tAdmin: 'Admin', tDemo: 'Demo Tools',
       polH: 'Only pre-approved overtime is recognized (except in special cases)',
       pol1: 'Get pre-approval from your manager (verbally or by email) before working overtime.',
       pol2: 'Overtime without pre-approval is not recognized except in special cases.',
@@ -1295,13 +1368,13 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
       scenarioHelp: 'Creates several pre-approved requests last month and this month so you can try verification and the CPA request right away.',
       confirmReset: 'Click again to reset', yes: 'Yes', no: 'No', close: 'Close',
       st: { PENDING: 'Pending', APPROVED: 'Pre-approved', REJECTED: 'Rejected', CANCELLED: 'Cancelled', EXPIRED: 'Expired (not recognized)', VERIFIED: 'Final approved', CPA: 'Sent to CPA', EXCLUDED: 'Excluded' },
-      vr: { OK: 'Match', PARTIAL: 'Partial', NO_RECORD: 'No record', NO_OVERLAP: 'No overlap', CHECK: 'Check', MANUAL: 'Manual' },
+      vr: { CLOCK: 'Time Clock', OK: 'Match', PARTIAL: 'Partial', NO_RECORD: 'No record', NO_OVERLAP: 'No overlap', CHECK: 'Check', MANUAL: 'Manual' },
       an: { MISSING_OUT: 'Missing OUT', DOUBLE_IN: 'Double IN', OUT_WITHOUT_IN: 'OUT without IN' },
       days: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
       dTitle: 'Overtime Payment Request', dSub: 'Overtime confirmed by Time Clock and final-approved',
-      dTo: 'To', dFrom: 'From', dPeriod: 'Pay period (month)', dIssue: 'Issue date', dPrep: 'Prepared by', dNo: 'Doc No.',
+      dTo: 'To', dFrom: 'From', dPeriod: 'Period', dIssue: 'Issue date', dPrep: 'Prepared by', dNo: 'Doc No.',
       dPol: '<b>Pre-approval and time-clock policy.</b> Each item in this request was confirmed against the company Time Clock and given final approval. Overtime performed without pre-approval is not recognized except in special cases; such exceptions are flagged as "Post" with the reason stated.', dPostCnt: '※ Includes {n} post-approved item(s) ({h} hrs) — see ⚠ in detail', dPreAll: '※ All items pre-approved',
-      dReq: 'Please include the following overtime for {m} in the corresponding payroll.',
+      dReq: 'Please include the following overtime for the period {m} in the next payroll.',
       dSum: '1. Summary by employee', dDet: '2. Detail', dEmp: 'Employee', dWkH: 'Weekday hrs', dPrH: 'Sat/Hol hrs', dTotH: 'Recognized hrs', dAmt: 'Amount ($)',
       dAppr: 'Approved', dApprAt: 'Pre-approval / Final', dTc: 'Time Clock', dRec: 'Recog.', dNotes: 'Basis of calculation',
       dN1: 'Pay = recognized hours × hourly rate × multiplier (weekday {wk}×, Saturday & company holidays {pr}×).',
@@ -1359,6 +1432,9 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
     if (e.code === 'OVERCLOCK') return (S.lang === 'ko' ? '인정 시간은 출퇴근 기록 시간을 넘을 수 없습니다 — ' : 'Recognized hours cannot exceed Time Clock hours — ') + m.replace('OVERCLOCK:', '');
     if (e.code === 'DUPDOC') return t('dupDoc') + ' — ' + m.replace('DUPDOC:', '');
     if (e.code === 'EXCLUDE_NOTE') return t('excludeReq') + ' — ' + m.replace('EXCLUDE_NOTE:', '');
+    if (e.code === 'TASK') return t('taskReq');
+    if (e.code === 'PREMETHOD') return t('preReq');
+    if (e.code === 'NOTLINKED') return t('notLinked');
     if (e.code === 'DUP') return t('dupErr') + ' — ' + m.replace('DUP:', '');
     if (e.code === 'FUTURE') return t('futureErr');
     if (e.code === 'AUTH') { logout(true); }
@@ -1465,8 +1541,8 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
     var tabs = [];
     var empReq = C.isTrue(S.data.settings.employeeRequests);
     if (has('employee') || (S.data.roles || []).length === 0) { if (empReq) tabs.push(['new', t('tNew')]); tabs.push(['mine', empReq ? t('tMine') : t('tMineOt')]); }
-    if (has('approver') && (empReq || S.data.requests.some(function (r) { return r.status === 'PENDING'; }))) {
-      var cnt = S.data.requests.filter(function (r) { return r.status === 'PENDING' && r.empId !== S.data.user.id; }).length;
+    if (has('approver') && (empReq || S.data.requests.some(function (r) { return r.status === 'PENDING' && r.source !== 'CLOCK'; }))) {
+      var cnt = S.data.requests.filter(function (r) { return r.status === 'PENDING' && r.source !== 'CLOCK' && r.empId !== S.data.user.id; }).length;
       tabs.push(['approve', t('tApprove') + (cnt ? '<span class="cnt">' + cnt + '</span>' : '')]);
     }
     if (has('admin')) tabs.push(['verify', t('tVerify')], ['cpa', t('tCpa')], ['admin', t('tAdmin')]);
@@ -1604,7 +1680,7 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
     var me = S.data.user.id;
     S.mineMonth = S.mineMonth || thisMonth();
     var all = S.data.requests.filter(function (r) { return r.empId === me; });
-    var list = all.filter(function (r) { return !S.mineMonth || monthOf(r.date) === S.mineMonth; })
+    var list = all.filter(function (r) { return (!S.mineMonth || monthOf(r.date) === S.mineMonth) && !(r.source === 'CLOCK' && r.status === 'PENDING'); })
       .sort(function (a, b) { return (b.date + b.start).localeCompare(a.date + a.start); });
     var sum = list.reduce(function (a, r) {
       if (r.status === 'PENDING') a.p += Number(r.hours);
@@ -1634,13 +1710,22 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
     call('myClock', { month: mm }).then(function (d) {
       if (!$('#myClock')) return;
       if (!d.linked) { box.innerHTML = '<h3>' + esc(t('myClockH')) + '</h3><div class="card empty">' + esc(t('notLinked')) + '</div>'; return; }
-      box.innerHTML = '<h3>' + esc(t('myClockH')) + '</h3><p class="muted small" style="margin-top:-4px">' + esc(t('myClockHelp')) + '</p><div class="tw">' + (d.days.length ? '<table class="t"><thead><tr><th>' + t('date') + '</th><th>' + t('sched') + '</th><th>' + t('timeClock') + '</th><th>' + t('otWin') + '</th><th class="n">' + t('clockH') + '</th><th class="n">' + t('recognized') + '</th><th>' + t('status') + '</th></tr></thead><tbody>' +
+      box.innerHTML = '<h3>' + esc(t('myClockH')) + '</h3><p class="muted small" style="margin-top:-4px">' + esc(t('myClockHelp')) + ' ' + esc(t('claimHelp')) + '</p><div class="tw">' + (d.days.length ? '<table class="t"><thead><tr><th>' + t('date') + '</th><th>' + t('sched') + '</th><th>' + t('timeClock') + '</th><th>' + t('otWin') + '</th><th class="n">' + t('clockH') + '</th><th class="n">' + t('recognized') + '</th><th>' + t('status') + '</th><th></th></tr></thead><tbody>' +
         d.days.map(function (x) {
-          var st = x.status ? badge(x.status) + (x.preApproved === 'N' ? ' <span class="b REJECTED">⚠ ' + esc(t('tagPost')) + '</span>' : '') + (x.docId ? '<div class="small muted">' + esc(x.docId) + '</div>' : '')
+          var canClaim = !x.status && x.otHours > 0 && !(d.startDate && x.date < d.startDate) && !x.anomalies.length;
+          var act = canClaim ? '<button class="btn sm pri" data-claim="' + x.date + '">' + t('claim') + '</button>' : (x.status === 'PENDING' ? '<button class="btn sm no" data-uncl="' + esc(x.id) + '">' + t('cancel') + '</button>' : '');
+          var st = x.status === 'PENDING' ? '<span class="b PENDING">' + esc(t('claimed')) + '</span><div class="small muted">' + esc(x.description) + '</div>' : x.status ? badge(x.status) + (x.preApproved === 'N' ? ' <span class="b REJECTED">⚠ ' + esc(t('tagPost')) + '</span>' : '') + (x.docId ? '<div class="small muted">' + esc(x.docId) + '</div>' : '')
             : (d.startDate && x.date < d.startDate ? '<span class="muted small">' + esc(t('beforeStart')) + '</span>'
-            : (x.anomalies.length ? '<span class="small" style="color:var(--violet);font-weight:700">' + esc(t('fixPunch')) + '</span>' : '<span class="b PENDING">' + esc(t('waitMgr')) + '</span>'));
-          return '<tr><td class="mono">' + x.date + ' ' + dayName(x.date) + (x.offDay ? ' <span class="b Y">' + t('offDay') + '</span>' : '') + '</td><td class="mono small">' + esc(x.sched) + '</td><td class="mono small">' + esc(x.punches || '—') + '</td><td class="mono small">' + esc(x.otLabel || '—') + '</td><td class="n">' + n2(x.otHours) + '</td><td class="n">' + (x.recognizedHours !== '' && x.status !== 'EXCLUDED' ? '<b>' + n2(x.recognizedHours) + '</b>' : '') + '</td><td>' + st + '</td></tr>';
+            : (x.anomalies.length ? '<span class="small" style="color:var(--violet);font-weight:700">' + esc(t('fixPunch')) + '</span>' : (x.rejectNote ? '<span class="b REJECTED">' + esc(t('rejectedPrev')) + '</span><div class="small" style="color:var(--red)">' + esc(x.rejectNote) + '</div>' : '')));
+          return '<tr><td class="mono">' + x.date + ' ' + dayName(x.date) + (x.offDay ? ' <span class="b Y">' + t('offDay') + '</span>' : '') + '</td><td class="mono small">' + esc(x.sched) + '</td><td class="mono small">' + esc(x.punches || '—') + '</td><td class="mono small">' + esc(x.otLabel || '—') + '</td><td class="n">' + n2(x.otHours) + '</td><td class="n">' + (x.recognizedHours !== '' && x.status !== 'EXCLUDED' ? '<b>' + n2(x.recognizedHours) + '</b>' : '') + '</td><td>' + st + '</td><td>' + act + '</td></tr>';
         }).join('') + '</tbody></table>' : '<div class="empty">' + t('noData') + '</div>') + '</div>';
+      $$('[data-claim]', box).forEach(function (b) { b.onclick = function () { claimModal(d.days.filter(function (x) { return x.date === b.getAttribute('data-claim'); })[0]); }; });
+      $$('[data-uncl]', box).forEach(function (b) {
+        b.onclick = function () {
+          if (b.getAttribute('data-armed') !== '1') { b.setAttribute('data-armed', '1'); b.textContent = t('cancel') + '?'; return; }
+          call('cancel', { id: b.getAttribute('data-uncl') }).then(function () { toast(t('cancelled')); return load(); }).catch(function (e) { toast(errMsg(e), true); });
+        };
+      });
     }).catch(function (e) { if ($('#myClock')) box.innerHTML = '<h3>' + esc(t('myClockH')) + '</h3><div class="card empty">' + esc(errMsg(e)) + '</div>'; });
     $$('[data-cancel]', el).forEach(function (b) {
       b.onclick = function () {
@@ -1648,6 +1733,29 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
         call('cancel', { id: b.getAttribute('data-cancel') }).then(function () { toast(t('cancelled')); return load(); }).catch(function (e) { toast(errMsg(e), true); });
       };
     });
+  }
+  function claimModal(x) {
+    modal('<h3>' + esc(t('claimH')) + ' — ' + x.date + ' (' + dayName(x.date) + ')</h3>' +
+      '<div class="grid" style="margin-bottom:10px">' + kv(t('timeClock'), '<span class="mono">' + esc(x.punches) + '</span>') + kv(t('otWin'), '<span class="mono">' + esc(x.otLabel) + '</span>') + kv(t('clockH'), '<span class="mono">' + n2(x.otHours) + 'h</span>') + '</div>' +
+      '<div class="field"><label>' + t('task') + ' *</label><input type="text" id="clTask"></div>' +
+      '<div class="field"><label>' + t('preHow') + ' *</label><div class="row">' +
+      [['verbal', t('preVerbal')], ['email', t('preEmail')], ['none', t('preNone')]].map(function (o) { return '<label class="row" style="gap:5px"><input type="radio" name="clPre" value="' + o[0] + '">' + esc(o[1]) + '</label>'; }).join('') + '</div></div>' +
+      '<div class="field"><label>' + t('preBy') + '</label><input type="text" id="clBy"></div>' +
+      '<div class="field"><label>' + t('claimNote') + '</label><input type="text" id="clNote"></div>' +
+      '<p class="small muted">' + esc(t('pol2')) + '</p>' +
+      '<div class="acts"><button class="btn" data-x>' + t('close') + '</button><button class="btn pri" data-ok>' + t('claim') + '</button></div>', function (m, close) {
+        $('[data-x]', m).onclick = close;
+        $('[data-ok]', m).onclick = function () {
+          var task = $('#clTask', m).value, pre = (m.querySelector('input[name=clPre]:checked') || {}).value, note = $('#clNote', m).value;
+          if (!task.trim()) return toast(t('taskReq'), true);
+          if (!pre) return toast(t('preReq'), true);
+          if (pre === 'none' && !note.trim()) return toast(t('exceptionReq'), true);
+          var btn = this; btn.disabled = true;
+          call('claimClock', { date: x.date, task: task, preMethod: pre, preBy: $('#clBy', m).value, note: note })
+            .then(function () { toast(t('claimOk')); close(); return load(); })
+            .catch(function (e) { toast(errMsg(e), true); btn.disabled = false; });
+        };
+      });
   }
   function stat(l, v) { return '<div class="stat"><div class="l">' + esc(l) + '</div><div class="v">' + esc(v) + '</div></div>'; }
   function monthPicker(id, val, withAll) {
@@ -1661,7 +1769,7 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
   /* ================= APPROVALS ================= */
   function viewApprove(el) {
     var me = S.data.user.id;
-    var pend = S.data.requests.filter(function (r) { return r.status === 'PENDING'; })
+    var pend = S.data.requests.filter(function (r) { return r.status === 'PENDING' && r.source !== 'CLOCK'; })
       .sort(function (a, b) { return (a.date + a.start).localeCompare(b.date + b.start); });
     var recent = S.data.requests.filter(function (r) { return r.decidedAt || r.status === 'EXPIRED'; })
       .sort(function (a, b) { return String(b.decidedAt || b.submittedAt).localeCompare(String(a.decidedAt || a.submittedAt)); }).slice(0, 40);
@@ -1710,7 +1818,7 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
     var expired = reqAll.filter(function (r) { return C.preApprovedOf(r) === 'N'; }).length;
     el.innerHTML = '<div class="row" style="justify-content:space-between"><h2>' + t('tVerify') + '</h2><div class="row">' + monthPicker('vmPick', m) + '<button class="btn pri" id="runV">' + t('runVerify') + '</button></div></div>' +
       '<p class="muted" style="margin-top:-6px">' + esc(t('candHelp')) + (V ? ' · <b>' + esc(t('loadedPunches', { n: V.punchCount })) + '</b>' : '') + '</p>' +
-      '<div class="stats">' + stat(t('candCount'), V ? String(V.candidates.filter(function (c) { return !c.records.length; }).length) : '–') + stat(t('st').VERIFIED, String(reqAll.filter(function (r) { return r.status === 'VERIFIED'; }).length)) + stat(t('st').CPA, String(reqAll.filter(function (r) { return r.status === 'CPA'; }).length)) + stat('⚠ ' + t('postCount'), String(expired)) + '</div>' +
+      '<div class="stats">' + stat(t('candCount'), V ? String(V.candidates.filter(function (c) { return !c.records.length || c.records.every(function (id) { return (reqById[id] || {}).status === 'PENDING'; }); }).length) : '–') + stat(t('st').VERIFIED, String(reqAll.filter(function (r) { return r.status === 'VERIFIED'; }).length)) + stat(t('st').CPA, String(reqAll.filter(function (r) { return r.status === 'CPA'; }).length)) + stat('⚠ ' + t('postCount'), String(expired)) + '</div>' +
       candSection(V) +
       (reqs.length ? '<h3 style="margin-top:22px">' + esc(t('reqSecH')) + '</h3>' : '') +
       (!reqs.length ? '' : '<div class="tw">' + (reqs.length ? '<table class="t" id="vTable"><thead><tr><th><input type="checkbox" id="vAll"></th><th>' + t('applicant') + '</th><th>' + t('date') + '</th><th>' + t('dAppr') + '</th><th class="n">' + t('hours') + '</th><th>' + t('timeClock') + '</th><th class="n">' + t('overlap') + '</th><th>' + t('suggestion') + '</th><th>' + t('decision') + '</th><th class="n">' + t('recognized') + '</th><th>' + t('note') + '</th><th>' + t('status') + '</th></tr></thead><tbody>' +
@@ -1786,10 +1894,12 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
     if (!V) return '<div class="card empty">' + esc(t('runFirst')) + '</div>';
     var rows = V.candidates;
     var byId = {}; S.data.requests.forEach(function (r) { byId[r.id] = r; });
-    var open = rows.filter(function (c) { return !c.records.length; }).length;
+    var open = rows.filter(function (c) { return c.otHours > 0 && (!c.records.length || (c.records.length === 1 && (byId[c.records[0]] || {}).status === 'PENDING')); }).length;
     return '<h3>' + esc(t('candH')) + '</h3><div class="tw">' + (rows.length ? '<table class="t" id="cTable"><thead><tr><th><input type="checkbox" id="cSelAll"></th><th>' + t('applicant') + '</th><th>' + t('date') + '</th><th>' + t('sched') + '</th><th>' + t('timeClock') + '</th><th>' + t('otWin') + '</th><th class="n">' + t('clockH') + '</th><th>' + t('brk') + '</th><th class="n">' + t('recognized') + '</th><th>' + t('preChk') + '</th><th>' + t('task') + '</th><th>' + t('excNote') + '</th><th>' + t('status') + '</th></tr></thead><tbody>' +
       rows.map(function (c) {
         var recs = c.records.map(function (id) { return byId[id]; }).filter(Boolean);
+        var cl = recs.length === 1 && recs[0].status === 'PENDING' && recs[0].source === 'CLOCK' ? recs[0] : null;
+        if (cl) recs = [];
         var dn = '<td>' + esc(empName(empById(c.empId)) || c.empName) + '</td><td class="mono">' + c.date + ' ' + dayName(c.date) + (c.offDay ? ' <span class="b Y">' + t('offDay') + '</span>' : '') + '</td><td class="mono small">' + esc(c.sched) + '</td>' +
           '<td class="mono small">' + esc(c.punches || '—') + (c.anomalies.length ? '<div style="color:var(--violet)">' + c.anomalies.map(function (a) { return esc(t('an')[a] || a); }).join(', ') + '</div>' : '') + '</td>' +
           '<td class="mono small">' + esc(c.otLabel || '—') + '</td><td class="n">' + n2(c.otHours) + '</td>';
@@ -1800,13 +1910,15 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
             '<td>' + recs.map(function (r) { return badge(r.status) + ((r.status === 'VERIFIED' || r.status === 'EXCLUDED') && r.source === 'CLOCK' ? ' <button class="btn sm ghost" data-undo="' + r.id + '">' + t('undo') + '</button>' : '') + (r.docId ? '<div class="small muted">' + esc(r.docId) + '</div>' : ''); }).join('') + '</td></tr>';
         }
         if (!(c.otHours > 0)) return '<tr class="dim"><td></td>' + dn + '<td colspan="6" class="small" style="color:var(--violet)">' + (S.lang === 'ko' ? '출퇴근 기록을 먼저 수정해야 승인할 수 있습니다' : 'Fix the Time Clock record first to approve') + '</td><td></td></tr>';
-        return '<tr data-key="' + esc(c.key) + '"><td><input type="checkbox" data-csel></td>' + dn +
+        var clNote = cl ? (cl.preMethod === 'none' ? (cl.lateReason || cl.verifyNote || '') : (cl.preMethod === 'email' ? t('preEmail') : t('preVerbal')) + (cl.preBy ? ' (' + cl.preBy + ')' : '') + (cl.verifyNote ? ' · ' + cl.verifyNote : '')) : '';
+        return '<tr data-key="' + esc(c.key) + '"' + (cl ? ' data-claim-id="' + esc(cl.id) + '" style="background:#fffbf0"' : '') + '><td><input type="checkbox" data-csel></td>' + dn +
           '<td><input type="number" data-cbrk min="0" step="5" value="0" style="width:64px"></td>' +
           '<td class="n"><input type="number" data-crec step="0.25" min="0" max="' + c.otHours + '" value="' + c.otHours + '" style="width:78px"></td>' +
-          '<td style="text-align:center"><input type="checkbox" data-cpre style="width:18px;height:18px"></td>' +
-          '<td><input type="text" data-ctask style="min-width:140px"></td><td><input type="text" data-cnote style="min-width:150px"></td><td></td></tr>';
+          '<td style="text-align:center"><input type="checkbox" data-cpre style="width:18px;height:18px"' + (cl && cl.preMethod !== 'none' ? ' checked' : '') + '></td>' +
+          '<td><input type="text" data-ctask style="min-width:140px" value="' + esc(cl ? cl.description : '') + '"></td><td><input type="text" data-cnote style="min-width:150px" value="' + esc(clNote) + '"></td>' +
+          '<td>' + (cl ? '<span class="b PENDING">' + esc(t('empClaim')) + '</span><div class="small muted mono">' + fmtTs(cl.submittedAt) + '</div>' : '') + '</td></tr>';
       }).join('') + '</tbody></table>' : '<div class="empty">' + t('noData') + '</div>') + '</div>' +
-      (open ? '<div class="row" style="justify-content:space-between;margin-top:10px"><span class="small muted" style="max-width:640px">' + esc(t('dedupNote')) + '</span><div class="row"><button class="btn no" id="cExclude">' + t('excludeSel') + '</button><button class="btn pri" id="cConfirm">' + t('confirmSel') + '</button></div></div>' : '');
+      (open ? '<div class="row" style="justify-content:space-between;margin-top:10px"><span class="small muted" style="max-width:640px">' + esc(t('dedupNote')) + '</span><div class="row"><button class="btn no" id="cReject">' + t('rejectSel') + '</button><button class="btn no" id="cExclude">' + t('excludeSel') + '</button><button class="btn pri" id="cConfirm">' + t('confirmSel') + '</button></div></div>' : '');
   }
   function bindCand(el, V) {
     if (!V) return;
@@ -1821,11 +1933,27 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
       $('[data-ctask]', tr).oninput = function () { sel.checked = true; };
       $('[data-cnote]', tr).oninput = function () { sel.checked = true; };
     });
+    var rj = $('#cReject');
+    if (rj) rj.onclick = function () {
+      var items = [], bad = false;
+      $$('tr[data-claim-id]', el).forEach(function (tr) {
+        if (!$('[data-csel]', tr).checked) return;
+        var note = $('[data-cnote]', tr).value;
+        if (!note.trim()) { bad = true; $('[data-cnote]', tr).style.borderColor = 'var(--red)'; }
+        items.push({ id: tr.getAttribute('data-claim-id'), note: note });
+      });
+      if (bad) return toast(t('rejectReq'), true);
+      if (!items.length) return;
+      rj.disabled = true;
+      call('rejectClaim', { items: items }).then(function () { toast(t('rejected')); return call('verifyPreview', { month: V.month }); })
+        .then(function (d) { d.month = V.month; S.verify = d; return load(); })
+        .catch(function (e) { toast(errMsg(e), true); rj.disabled = false; });
+    };
     var ex = $('#cExclude');
     if (ex) ex.onclick = function () {
       var items = [], bad = false;
       $$('tr[data-key]', el).forEach(function (tr) {
-        if (!$('[data-csel]', tr).checked) return;
+        if (!$('[data-csel]', tr).checked || tr.getAttribute('data-claim-id')) return;
         var c = map[tr.getAttribute('data-key')], note = $('[data-cnote]', tr).value;
         if (!note.trim()) { bad = true; $('[data-cnote]', tr).style.borderColor = 'var(--red)'; }
         items.push({ empId: c.empId, date: c.date, otStart: c.otStart, otEnd: c.otEnd, clockHours: c.otHours, note: note });
@@ -1865,31 +1993,35 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
   /* ================= CPA ================= */
   function viewCpa(el) {
     if (S.docView) return viewDoc(el, S.docView);
-    S.cpaMonth = S.cpaMonth || prevMonth(thisMonth());
-    var m = S.cpaMonth;
-    var ready = S.data.requests.filter(function (r) { return monthOf(r.date) === m && r.status === 'VERIFIED'; })
+    var docsAll = (S.data.docs || []).filter(function (d) { return d.status !== 'VOID' && d.periodTo; }).sort(function (a, b) { return String(b.periodTo).localeCompare(String(a.periodTo)); });
+    if (!S.cpaFrom) S.cpaFrom = docsAll.length ? C.addDays(docsAll[0].periodTo, 1) : (S.data.settings.startDate || thisMonth() + '-01');
+    if (!S.cpaTo) S.cpaTo = nowET().slice(0, 10);
+    var pf = S.cpaFrom, pt = S.cpaTo, m = pf + ' ~ ' + pt;
+    var pending = S.data.requests.filter(function (r) { return r.date >= pf && r.date <= pt && r.status === 'PENDING'; }).length;
+    var ready = S.data.requests.filter(function (r) { return r.date >= pf && r.date <= pt && r.status === 'VERIFIED'; })
       .sort(function (a, b) { return (a.empId + a.date + a.start).localeCompare(b.empId + b.date + b.start); });
     var docs = (S.data.docs || []).slice().sort(function (a, b) { return String(b.createdAt).localeCompare(String(a.createdAt)); });
-    el.innerHTML = '<div class="row" style="justify-content:space-between"><h2>' + t('tCpa') + '</h2>' + monthPicker('cmPick', m) + '</div>' +
-      '<p class="muted" style="margin-top:-6px">' + esc(t('cpaHelp')) + '</p>' +
+    el.innerHTML = '<div class="row" style="justify-content:space-between"><h2>' + t('tCpa') + '</h2><div class="row"><span class="small muted">' + t('period') + '</span><input type="date" id="cpFrom" value="' + pf + '" style="width:160px"><span>~</span><input type="date" id="cpTo" value="' + pt + '" style="width:160px"></div></div>' +
+      '<p class="muted" style="margin-top:-6px">' + esc(t('cpaHelp')) + (pending ? ' <b style="color:var(--amber)">· ' + t('st').PENDING + ' ' + pending + '</b>' : '') + '</p>' +
       '<div class="card"><h3>' + t('verifiedReady') + ' — ' + m + '</h3><div class="tw">' + (ready.length ? '<table class="t"><thead><tr><th><input type="checkbox" id="cAll" checked></th><th>' + t('applicant') + '</th><th>' + t('date') + '</th><th>' + t('dAppr') + '</th><th class="n">' + t('hours') + '</th><th class="n">' + t('recognized') + '</th><th class="n">' + t('mult') + '</th><th class="n">' + t('pay') + '</th><th>' + t('suggestion') + '</th></tr></thead><tbody>' +
         ready.map(function (r) {
           var zero = !(Number(r.recognizedHours) > 0);
           return '<tr><td><input type="checkbox" data-cid="' + r.id + '"' + (zero ? '' : ' checked') + '></td><td>' + esc(empName(empById(r.empId)) || r.empName) + '</td><td class="mono">' + r.date + ' ' + dayName(r.date) + '</td><td class="mono">' + r.start + '–' + r.end + '</td><td class="n">' + n2(r.hours) + '</td><td class="n"><b>' + n2(r.recognizedHours) + '</b></td><td class="n">' + r.multiplier + '×</td><td class="n">' + money(r.pay) + '</td><td>' + vbadge(r.verifyResult) + preTag(r) + '</td></tr>';
         }).join('') + '</tbody></table>' : '<div class="empty">' + t('noData') + '</div>') + '</div>' +
       (ready.length ? '<div class="row" style="justify-content:flex-end;margin-top:10px"><button class="btn pri" id="cIssue">' + t('issue') + '</button></div>' : '') + '</div>' +
-      '<div class="card"><h3>' + t('docHistory') + '</h3><div class="tw">' + (docs.length ? '<table class="t"><thead><tr><th>' + t('docNo') + '</th><th>' + t('month') + '</th><th>' + t('dIssue') + '</th><th>' + t('dPrep') + '</th><th class="n">' + t('recognized') + '</th><th class="n">' + t('dAmt') + '</th><th>' + t('status') + '</th><th></th></tr></thead><tbody>' +
+      '<div class="card"><h3>' + t('docHistory') + '</h3><div class="tw">' + (docs.length ? '<table class="t"><thead><tr><th>' + t('docNo') + '</th><th>' + t('period') + '</th><th>' + t('dIssue') + '</th><th>' + t('dPrep') + '</th><th class="n">' + t('recognized') + '</th><th class="n">' + t('dAmt') + '</th><th>' + t('status') + '</th><th></th></tr></thead><tbody>' +
         docs.map(function (d) {
-          return '<tr' + (d.status === 'VOID' ? ' class="dim"' : '') + '><td class="mono"><b>' + esc(d.id) + '</b></td><td class="mono">' + d.month + '</td><td class="mono small">' + fmtTs(d.createdAt) + '</td><td>' + esc(d.createdBy) + '</td><td class="n">' + n2(d.totalHours) + '</td><td class="n">' + money(d.totalPay) + '</td><td>' + (d.status === 'VOID' ? '<span class="b REJECTED">VOID</span>' : '<span class="b CPA">ISSUED</span>') + '</td><td><button class="btn sm" data-view="' + esc(d.id) + '">' + t('view') + '</button></td></tr>';
+          return '<tr' + (d.status === 'VOID' ? ' class="dim"' : '') + '><td class="mono"><b>' + esc(d.id) + '</b></td><td class="mono small">' + (d.periodFrom ? d.periodFrom + ' ~ ' + d.periodTo : d.month) + '</td><td class="mono small">' + fmtTs(d.createdAt) + '</td><td>' + esc(d.createdBy) + '</td><td class="n">' + n2(d.totalHours) + '</td><td class="n">' + money(d.totalPay) + '</td><td>' + (d.status === 'VOID' ? '<span class="b REJECTED">VOID</span>' : '<span class="b CPA">ISSUED</span>') + '</td><td><button class="btn sm" data-view="' + esc(d.id) + '">' + t('view') + '</button></td></tr>';
         }).join('') + '</tbody></table>' : '<div class="empty">' + t('noData') + '</div>') + '</div></div>';
-    bindMonth('cmPick', function (v) { S.cpaMonth = v; render(); });
+    $('#cpFrom').onchange = function () { S.cpaFrom = this.value; render(); };
+    $('#cpTo').onchange = function () { S.cpaTo = this.value; render(); };
     var ca = $('#cAll'); if (ca) ca.onchange = function () { $$('[data-cid]', el).forEach(function (c) { c.checked = ca.checked; }); };
     var ci = $('#cIssue');
     if (ci) ci.onclick = function () {
       var ids = $$('[data-cid]', el).filter(function (c) { return c.checked; }).map(function (c) { return c.getAttribute('data-cid'); });
       if (!ids.length) return;
       ci.disabled = true;
-      call('issueDoc', { month: m, ids: ids }).then(function (d) { toast(t('issued') + ' — ' + d.doc.id); S.docView = d.doc.id; return load(); })
+      call('issueDoc', { from: pf, to: pt, ids: ids }).then(function (d) { toast(t('issued') + ' — ' + d.doc.id); S.docView = d.doc.id; S.cpaFrom = null; S.cpaTo = null; return load(); })
         .catch(function (e) { toast(errMsg(e), true); ci.disabled = false; });
     };
     $$('[data-view]', el).forEach(function (b) { b.onclick = function () { S.docView = b.getAttribute('data-view'); S.docLang = null; render(); }; });
@@ -1916,7 +2048,7 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
     var v = $('#dVoid');
     if (v) v.onclick = function () {
       if (v.getAttribute('data-armed') !== '1') { v.setAttribute('data-armed', '1'); v.textContent = t('void') + '?'; return; }
-      call('voidDoc', { id: d.id }).then(function () { toast(t('voided')); return load(); }).catch(function (e) { toast(errMsg(e), true); });
+      call('voidDoc', { id: d.id }).then(function () { toast(t('voided')); S.cpaFrom = null; return load(); }).catch(function (e) { toast(errMsg(e), true); });
     };
   }
 
@@ -1939,7 +2071,7 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
       });
       var list = Object.keys(emps).map(function (k) { return emps[k]; });
       var G = list.reduce(function (a, e) { a.wk += e.wk; a.pr += e.pr; a.tot += e.tot; a.amt += e.amt; return a; }, { wk: 0, pr: 0, tot: 0, amt: 0 });
-      var mLabel = L === 'ko' ? d.month.replace('-', '년 ') + '월' : new Date(d.month + '-15T12:00:00Z').toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+      var mLabel = d.periodFrom ? d.periodFrom + ' ~ ' + d.periodTo : (L === 'ko' ? d.month.replace('-', '년 ') + '월' : new Date(d.month + '-15T12:00:00Z').toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }));
       var nm = function (e) { return e.emp ? empName(e.emp) : e.name; };
       var h = '<div class="doc">' + (d.status === 'VOID' ? '<div class="void">' + t('dVoid') + '</div>' : '') +
         '<div class="lh"><div class="co">' + esc(s.companyName) + '</div><div class="ad">' + esc(s.address) + '<br>Tel ' + esc(s.phone) + '</div></div>' +
