@@ -30,10 +30,10 @@ var OTCore = (function () {
     Requests: ['id', 'groupId', 'empId', 'empName', 'date', 'start', 'end', 'breakMin', 'otType', 'description',
       'hours', 'premium', 'multiplier', 'status', 'ack', 'submittedAt', 'decidedAt', 'decidedBy', 'decidedByName',
       'decisionComment', 'actualIn', 'actualOut', 'actualHours', 'verifyResult', 'recognizedHours', 'rate', 'pay',
-      'verifyNote', 'verifiedAt', 'verifiedBy', 'docId', 'lateEntry', 'lateReason', 'preApproved', 'source'],
+      'verifyNote', 'verifiedAt', 'verifiedBy', 'docId', 'lateEntry', 'lateReason', 'preApproved', 'source', 'preMethod', 'preBy'],
     Holidays: ['date', 'name'],
     Settings: ['key', 'value'],
-    Docs: ['id', 'month', 'createdAt', 'createdBy', 'requestIds', 'totalHours', 'totalPay', 'status', 'note'],
+    Docs: ['id', 'month', 'createdAt', 'createdBy', 'requestIds', 'totalHours', 'totalPay', 'status', 'note', 'periodFrom', 'periodTo'],
     Log: ['ts', 'user', 'action', 'target', 'detail']
   };
 
@@ -48,7 +48,7 @@ var OTCore = (function () {
     graceMinutes: '10',
     reviewMinutes: '15',
     employeeRequests: 'FALSE',
-    startDate: '',
+    startDate: '2026-09-25',
     cpaName: '',
     cpaEmail: '',
     adminEmail: '',
@@ -605,7 +605,8 @@ var OTCore = (function () {
             if (!emp) err('NOTFOUND', it.empId);
             if (!/^\d{4}-\d{2}-\d{2}$/.test(it.date || '')) err('DATE', 'Invalid date');
             var dup = all.concat(done).filter(function (r) { return r.empId === it.empId && r.date === it.date && [STATUS.REJECTED, STATUS.CANCELLED, STATUS.EXPIRED].indexOf(r.status) < 0; });
-            if (dup.length) err('DUP', 'DUP:' + emp.name + ' ' + it.date);
+            var claim = dup.filter(function (r) { return r.status === STATUS.PENDING && r.source === 'CLOCK'; })[0];
+            if (dup.length && !(claim && dup.length === 1)) err('DUP', 'DUP:' + emp.name + ' ' + it.date);
             var c = cand[it.empId + '|' + it.date];
             if (!c || !(c.otHours > 0)) err('NOCLOCK', 'NOCLOCK:' + emp.name + ' ' + it.date);
             it.otStart = c.otStart; it.otEnd = c.otEnd; it.clockHours = c.otHours;
@@ -633,10 +634,80 @@ var OTCore = (function () {
               verifyNote: String(it.note || ''), verifiedAt: now, verifiedBy: u.nameEn || u.name, docId: '',
               lateEntry: 'N', lateReason: pre ? '' : String(it.note || ''), preApproved: pre ? 'Y' : 'N', source: 'CLOCK'
             };
+            if (claim) {
+              r.id = claim.id; r.submittedAt = claim.submittedAt; r.preMethod = claim.preMethod || ''; r.preBy = claim.preBy || '';
+              if (!r.description) r.description = claim.description || '';
+              r._update = true;
+            }
             done.push(r);
           });
-          done.forEach(function (r) { store.append('Requests', r); });
+          done.forEach(function (r) { var up = r._update; delete r._update; if (up) store.upsert('Requests', 'id', r); else store.append('Requests', r); });
           log(u, 'finalizeClock', '', done.map(function (r) { return r.id + ':' + r.recognizedHours + (r.preApproved === 'N' ? '(exception)' : ''); }).join(','));
+          return { requests: done };
+        });
+      },
+
+      /** Employee claims an overtime day straight from their own Time Clock record. */
+      claimClock: function (p) {
+        var u = auth(p);
+        var s = settings(), hol = holidays();
+        var date = String(p.date || '');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) err('DATE', 'Invalid date');
+        if (!u.timeClockName) err('NOTLINKED', 'Not linked to Time Clock');
+        if (!String(p.task || '').trim()) err('TASK', 'Task description required');
+        var method = { verbal: 1, email: 1, none: 1 }[p.preMethod] ? p.preMethod : '';
+        if (!method) err('PREMETHOD', 'Select how overtime was pre-approved');
+        if (method === 'none' && !String(p.note || '').trim()) err('EXCEPTION', 'EXCEPTION:' + date);
+        var m = date.slice(0, 7);
+        var from = m + '-01', to = addDays(addDays(m + '-28', 4).slice(0, 7) + '-01', -1);
+        var mine = {}; mine[u.id] = punchesFor(from, to)[u.id] || [];
+        var c = clockCandidates(mine, [u], hol, s, m).filter(function (x) { return x.date === date; })[0];
+        if (!c || !(c.otHours > 0)) err('NOCLOCK', 'NOCLOCK:' + date);
+        return store.lock(function () {
+          var all = store.read('Requests'), now = store.nowET();
+          var dup = all.filter(function (r) { return r.empId === u.id && r.date === date && [STATUS.REJECTED, STATUS.CANCELLED, STATUS.EXPIRED].indexOf(r.status) < 0; });
+          if (dup.length) err('DUP', 'DUP:' + date + ' (' + dup[0].status + ')');
+          var ps = String(c.punches || '').split(', ');
+          var r = {
+            id: 'OT' + date.slice(2, 4) + date.slice(5, 7) + '-' + ('000' + (all.length + 1)).slice(-4) + '-' + store.uuid().slice(0, 4).toUpperCase(),
+            groupId: 'CLOCK', empId: u.id, empName: u.name, date: date, start: c.otStart, end: c.otEnd, breakMin: '0',
+            otType: '', description: String(p.task).trim(), hours: String(c.otHours),
+            premium: isPremiumDay(date, hol, s) ? 'Y' : 'N', multiplier: String(multiplierFor(date, hol, s)),
+            status: STATUS.PENDING, ack: 'TRUE', submittedAt: now,
+            actualIn: (ps[0] || '').split('–')[0], actualOut: (ps[ps.length - 1] || '').split('–')[1] || '', actualHours: String(c.otHours),
+            lateEntry: 'N', lateReason: method === 'none' ? String(p.note).trim() : '', verifyNote: String(p.note || '').trim(),
+            source: 'CLOCK', preMethod: method, preBy: String(p.preBy || '').trim()
+          };
+          store.append('Requests', r);
+          log(u, 'claimClock', r.id, date + ' ' + c.otHours + 'h ' + method);
+          try {
+            var to2 = employees().filter(function (e) { return isTrue(e.active) && (has(e, 'admin') || has(e, 'approver')) && e.email && e.id !== u.id; }).map(function (e) { return e.email; });
+            if (s.adminEmail) to2.push(s.adminEmail);
+            to2 = to2.filter(function (v, i, a) { return a.indexOf(v) === i; });
+            if (to2.length) store.sendMail(to2.join(','), '[JNFAM OT] OT 신청 / Overtime claim — ' + (u.nameEn || u.name) + ' ' + date,
+              '<div style="font-family:Arial,sans-serif;font-size:14px"><p><b>' + esc(u.name) + '</b> 님이 OT를 신청했습니다. / ' + esc(u.nameEn || u.name) + ' submitted an overtime claim.</p>'
+              + '<p>' + date + ' · Time Clock ' + esc(c.punches) + ' · OT ' + esc(c.otLabel) + ' (' + c.otHours + 'h)</p>'
+              + '<p>작업 / Task: ' + esc(r.description) + '<br>사전 승인 / Pre-approval: ' + ({ verbal: '구두 / Verbal', email: '메일 / Email', none: '없음 / None' })[method] + (r.preBy ? ' (' + esc(r.preBy) + ')' : '') + (r.verifyNote ? '<br>비고 / Note: ' + esc(r.verifyNote) : '') + '</p>'
+              + (s.appUrl ? '<p><a href="' + s.appUrl + '">' + s.appUrl + '</a></p>' : '') + '</div>', s.ccEmail);
+          } catch (e) { log(u, 'mail-error', r.id, String(e)); }
+          return { request: r };
+        });
+      },
+
+      rejectClaim: function (p) {
+        var u = auth(p); need(u, 'admin');
+        var items = p.items || [];
+        return store.lock(function () {
+          var all = store.read('Requests'), now = store.nowET(), done = [];
+          items.forEach(function (it) {
+            var r = all.filter(function (x) { return x.id === it.id; })[0];
+            if (!r || r.status !== STATUS.PENDING) err('STATE', 'STATE:' + it.id);
+            if (!String(it.note || '').trim()) err('COMMENT', 'Reason required');
+            r.status = STATUS.REJECTED; r.decidedAt = now; r.decidedBy = u.id; r.decidedByName = u.nameEn || u.name; r.decisionComment = String(it.note).trim();
+            store.upsert('Requests', 'id', r); done.push(r);
+            try { mailApplicant(r, u, settings()); } catch (e) { }
+          });
+          log(u, 'rejectClaim', '', done.map(function (r) { return r.id; }).join(','));
           return { requests: done };
         });
       },
@@ -693,10 +764,11 @@ var OTCore = (function () {
           var all = store.read('Requests'), now = store.nowET();
           var sel = all.filter(function (r) { return (p.ids || []).indexOf(r.id) >= 0; });
           if (!sel.length) err('EMPTY', 'Nothing selected');
+          var pf = p.from || (p.month ? p.month + '-01' : ''), pt = p.to || (p.month ? addDays(addDays(p.month + '-28', 4).slice(0, 7) + '-01', -1) : '');
           var seen = {};
           sel.forEach(function (r) {
             if (r.status !== STATUS.VERIFIED) err('STATE', r.id + ' is not verified');
-            if (String(r.date).slice(0, 7) !== p.month) err('MONTH', r.id);
+            if (r.date < pf || r.date > pt) err('MONTH', 'Out of period: ' + r.id);
             var k = r.empId + '|' + r.date;
             if (seen[k]) err('DUPDOC', 'DUPDOC:' + r.empName + ' ' + r.date);
             seen[k] = 1;
@@ -704,10 +776,10 @@ var OTCore = (function () {
             if (prev) err('DUPDOC', 'DUPDOC:' + r.empName + ' ' + r.date + ' → ' + prev.docId);
           });
           var docs = store.read('Docs');
-          var prefix = 'OT-' + p.month.replace('-', '') + '-';
+          var prefix = 'OT-' + now.slice(0, 10).replace(/-/g, '') + '-';
           var n = docs.filter(function (d) { return String(d.id).indexOf(prefix) === 0; }).length + 1;
           var doc = {
-            id: prefix + ('0' + n).slice(-2), month: p.month, createdAt: now, createdBy: u.nameEn || u.name,
+            id: prefix + ('0' + n).slice(-2), month: pt.slice(0, 7), periodFrom: pf, periodTo: pt, createdAt: now, createdBy: u.nameEn || u.name,
             requestIds: sel.map(function (r) { return r.id; }).join(','),
             totalHours: String(round2(sel.reduce(function (a, r) { return a + Number(r.recognizedHours || 0); }, 0))),
             totalPay: String(round2(sel.reduce(function (a, r) { return a + Number(r.pay || 0); }, 0))),
@@ -793,7 +865,8 @@ var OTCore = (function () {
         var reqs = store.read('Requests').filter(function (r) { return r.empId === u.id && String(r.date).slice(0, 7) === month && [STATUS.REJECTED, STATUS.CANCELLED, STATUS.EXPIRED].indexOf(r.status) < 0; });
         var days = clockCandidates(mine, [u], hol, s, month).map(function (c) {
           var rs = reqs.filter(function (r) { return r.date === c.date; });
-          return { date: c.date, offDay: c.offDay, sched: c.sched, punches: c.punches, anomalies: c.anomalies, otLabel: c.otLabel, otHours: c.otHours,
+          var rj = store.read('Requests').filter(function (r) { return r.empId === u.id && r.date === c.date && r.status === STATUS.REJECTED; }).pop();
+          return { id: rs.length ? rs[0].id : '', rejectNote: !rs.length && rj ? rj.decisionComment : '', description: rs.length ? rs[0].description : '', date: c.date, offDay: c.offDay, sched: c.sched, punches: c.punches, anomalies: c.anomalies, otLabel: c.otLabel, otHours: c.otHours,
             status: rs.length ? rs[0].status : '', recognizedHours: rs.length ? rs[0].recognizedHours : '', preApproved: rs.length ? rs[0].preApproved : '', docId: rs.length ? rs[0].docId : '' };
         });
         return { days: days, linked: true, startDate: s.startDate || '' };
