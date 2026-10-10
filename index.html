@@ -711,23 +711,34 @@ var OTCore = (function () {
       verifyPreview: function (p) {
         var u = auth(p);
         need(u, 'admin');
-        var month = p.month;
-        var from = month + '-01', to = addDays(addDays(month + '-28', 4).slice(0, 7) + '-01', -1);
+        var from, to;
+        if (p.from && p.to) { from = p.from; to = p.to; }
+        else { from = p.month + '-01'; to = addDays(addDays(p.month + '-28', 4).slice(0, 7) + '-01', -1); }
+        if (from > to) err('PERIOD', 'Invalid period');
+        var months = [];
+        for (var mm = from.slice(0, 7); mm <= to.slice(0, 7); mm = addDays(mm + '-28', 4).slice(0, 7)) months.push(mm);
         var s = settings(), hol = holidays();
         var punches = punchesFor(from, to);
-        var reqs = store.read('Requests').filter(function (r) { return String(r.date).slice(0, 7) === month; });
+        var inR = function (d) { return d >= from && d <= to; };
+        var reqs = store.read('Requests').filter(function (r) { return inR(String(r.date)); });
         var rows = reqs.filter(function (r) { return [STATUS.APPROVED, STATUS.VERIFIED, STATUS.CPA].indexOf(r.status) >= 0; })
           .map(function (r) { return { id: r.id, match: matchPunches(punches[r.empId] || [], r, s.graceMinutes) }; });
         var emps = employees().filter(function (e) { return isTrue(e.active) && e.timeClockName; });
+        var cands = [], unap = [];
+        months.forEach(function (m) {
+          cands = cands.concat(clockCandidates(punches, emps, hol, s, m));
+          unap = unap.concat(unapprovedExtra(punches, emps, reqs, hol, s, m));
+        });
         return {
+          from: from, to: to,
           rows: rows,
-          unapproved: unapprovedExtra(punches, emps, reqs, hol, s, month),
-          candidates: clockCandidates(punches, emps, hol, s, month).map(function (c) {
+          unapproved: unap.filter(function (x) { return inR(x.date); }),
+          candidates: cands.filter(function (c) { return inR(c.date); }).map(function (c) {
             c.records = reqs.filter(function (r) { return r.empId === c.empId && r.date === c.date && [STATUS.REJECTED, STATUS.CANCELLED, STATUS.EXPIRED].indexOf(r.status) < 0; })
               .map(function (r) { return r.id; });
             return c;
-          }),
-          punchCount: Object.keys(punches).reduce(function (a, k) { return a + punches[k].length; }, 0)
+          }).sort(function (a, b) { return (a.empId + a.date).localeCompare(b.empId + b.date); }),
+          punchCount: Object.keys(punches).reduce(function (a, k) { return a + punches[k].filter(function (x) { return inR(x.date); }).length; }, 0)
         };
       },
 
@@ -1806,17 +1817,31 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
   }
 
   /* ================= VERIFY ================= */
+  function initPeriod() {
+    var docsAll = (S.data.docs || []).filter(function (d) { return d.status !== 'VOID' && d.periodTo; }).sort(function (a, b) { return String(b.periodTo).localeCompare(String(a.periodTo)); });
+    if (!S.cpaFrom) S.cpaFrom = docsAll.length ? C.addDays(docsAll[0].periodTo, 1) : (S.data.settings.startDate || thisMonth() + '-01');
+    if (!S.cpaTo) S.cpaTo = nowET().slice(0, 10);
+  }
+  function periodPicker() {
+    return '<div class="row"><span class="small muted">' + t('period') + '</span><input type="date" id="pFrom" value="' + S.cpaFrom + '" style="width:160px"><span>~</span><input type="date" id="pTo" value="' + S.cpaTo + '" style="width:160px"></div>';
+  }
+  function bindPeriod() {
+    var f = $('#pFrom'), t2 = $('#pTo');
+    if (f) f.onchange = function () { S.cpaFrom = this.value; S.verify = null; render(); };
+    if (t2) t2.onchange = function () { S.cpaTo = this.value; S.verify = null; render(); };
+  }
   function viewVerify(el) {
-    S.verifyMonth = S.verifyMonth || thisMonth();
-    var m = S.verifyMonth;
-    var reqAll = S.data.requests.filter(function (r) { return monthOf(r.date) === m && ['APPROVED', 'VERIFIED', 'CPA'].indexOf(r.status) >= 0; })
+    initPeriod();
+    var pf = S.cpaFrom, pt = S.cpaTo, m = pf + '|' + pt;
+    var inP = function (d) { return d >= pf && d <= pt; };
+    var reqAll = S.data.requests.filter(function (r) { return inP(r.date) && ['APPROVED', 'VERIFIED', 'CPA'].indexOf(r.status) >= 0; })
       .sort(function (a, b) { return (a.date + a.empId + a.start).localeCompare(b.date + b.empId + b.start); });
     var reqs = reqAll.filter(function (r) { return r.source !== 'CLOCK'; });
     var reqById = {}; S.data.requests.forEach(function (r) { reqById[r.id] = r; });
     var V = S.verify && S.verify.month === m ? S.verify : null;
     var byId = {}; if (V) V.rows.forEach(function (x) { byId[x.id] = x.match; });
     var expired = reqAll.filter(function (r) { return C.preApprovedOf(r) === 'N'; }).length;
-    el.innerHTML = '<div class="row" style="justify-content:space-between"><h2>' + t('tVerify') + '</h2><div class="row">' + monthPicker('vmPick', m) + '<button class="btn pri" id="runV">' + t('runVerify') + '</button></div></div>' +
+    el.innerHTML = '<div class="row" style="justify-content:space-between"><h2>' + t('tVerify') + '</h2><div class="row">' + periodPicker() + '<button class="btn pri" id="runV">' + t('runVerify') + '</button></div></div>' +
       '<p class="muted" style="margin-top:-6px">' + esc(t('candHelp')) + (V ? ' · <b>' + esc(t('loadedPunches', { n: V.punchCount })) + '</b>' : '') + '</p>' +
       '<div class="stats">' + stat(t('candCount'), V ? String(V.candidates.filter(function (c) { return !c.records.length || c.records.every(function (id) { return (reqById[id] || {}).status === 'PENDING'; }); }).length) : '–') + stat(t('st').VERIFIED, String(reqAll.filter(function (r) { return r.status === 'VERIFIED'; }).length)) + stat(t('st').CPA, String(reqAll.filter(function (r) { return r.status === 'CPA'; }).length)) + stat('⚠ ' + t('postCount'), String(expired)) + '</div>' +
       candSection(V) +
@@ -1844,10 +1869,10 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
       '';
 
     bindCand(el, V);
-    bindMonth('vmPick', function (v) { S.verifyMonth = v; S.verify = null; render(); });
+    bindPeriod();
     $('#runV').onclick = function () {
       var b = this; b.disabled = true;
-      call('verifyPreview', { month: m }).then(function (d) { d.month = m; S.verify = d; toast(t('loadedPunches', { n: d.punchCount })); render(); })
+      call('verifyPreview', { from: pf, to: pt }).then(function (d) { d.month = m; S.verify = d; toast(t('loadedPunches', { n: d.punchCount })); render(); })
         .catch(function (e) { toast(errMsg(e), true); b.disabled = false; });
     };
     var all = $('#vAll'); if (all) all.onchange = function () { $$('[data-sel]', el).forEach(function (c) { c.checked = all.checked; }); };
@@ -1866,7 +1891,7 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
     });
     $$('[data-undo]', el).forEach(function (b) {
       b.onclick = function () {
-        call('unverify', { id: b.getAttribute('data-undo') }).then(function () { return S.verify ? call('verifyPreview', { month: S.verify.month }).then(function (d) { d.month = S.verify.month; S.verify = d; }) : null; })
+        call('unverify', { id: b.getAttribute('data-undo') }).then(function () { return S.verify ? call('verifyPreview', { from: S.verify.from, to: S.verify.to }).then(function (d) { d.month = S.verify.month; S.verify = d; }) : null; })
           .then(load).catch(function (e) { toast(errMsg(e), true); });
       };
     });
@@ -1945,7 +1970,7 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
       if (bad) return toast(t('rejectReq'), true);
       if (!items.length) return;
       rj.disabled = true;
-      call('rejectClaim', { items: items }).then(function () { toast(t('rejected')); return call('verifyPreview', { month: V.month }); })
+      call('rejectClaim', { items: items }).then(function () { toast(t('rejected')); return call('verifyPreview', { from: V.from, to: V.to }); })
         .then(function (d) { d.month = V.month; S.verify = d; return load(); })
         .catch(function (e) { toast(errMsg(e), true); rj.disabled = false; });
     };
@@ -1961,7 +1986,7 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
       if (bad) return toast(t('excludeReq'), true);
       if (!items.length) return;
       ex.disabled = true;
-      call('excludeClock', { items: items }).then(function () { toast(t('excluded')); return call('verifyPreview', { month: V.month }); })
+      call('excludeClock', { items: items }).then(function () { toast(t('excluded')); return call('verifyPreview', { from: V.from, to: V.to }); })
         .then(function (d) { d.month = V.month; S.verify = d; return load(); })
         .catch(function (e) { toast(errMsg(e), true); ex.disabled = false; });
     };
@@ -1984,7 +2009,7 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
       if (bad) return toast(t('recognized') + ' > 0', true);
       if (!items.length) return;
       b.disabled = true;
-      call('finalizeClock', { items: items }).then(function () { toast(t('confirmed')); return call('verifyPreview', { month: V.month }); })
+      call('finalizeClock', { items: items }).then(function () { toast(t('confirmed')); return call('verifyPreview', { from: V.from, to: V.to }); })
         .then(function (d) { d.month = V.month; S.verify = d; return load(); })
         .catch(function (e) { toast(errMsg(e), true); b.disabled = false; });
     };
@@ -1993,15 +2018,13 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
   /* ================= CPA ================= */
   function viewCpa(el) {
     if (S.docView) return viewDoc(el, S.docView);
-    var docsAll = (S.data.docs || []).filter(function (d) { return d.status !== 'VOID' && d.periodTo; }).sort(function (a, b) { return String(b.periodTo).localeCompare(String(a.periodTo)); });
-    if (!S.cpaFrom) S.cpaFrom = docsAll.length ? C.addDays(docsAll[0].periodTo, 1) : (S.data.settings.startDate || thisMonth() + '-01');
-    if (!S.cpaTo) S.cpaTo = nowET().slice(0, 10);
+    initPeriod();
     var pf = S.cpaFrom, pt = S.cpaTo, m = pf + ' ~ ' + pt;
     var pending = S.data.requests.filter(function (r) { return r.date >= pf && r.date <= pt && r.status === 'PENDING'; }).length;
     var ready = S.data.requests.filter(function (r) { return r.date >= pf && r.date <= pt && r.status === 'VERIFIED'; })
       .sort(function (a, b) { return (a.empId + a.date + a.start).localeCompare(b.empId + b.date + b.start); });
     var docs = (S.data.docs || []).slice().sort(function (a, b) { return String(b.createdAt).localeCompare(String(a.createdAt)); });
-    el.innerHTML = '<div class="row" style="justify-content:space-between"><h2>' + t('tCpa') + '</h2><div class="row"><span class="small muted">' + t('period') + '</span><input type="date" id="cpFrom" value="' + pf + '" style="width:160px"><span>~</span><input type="date" id="cpTo" value="' + pt + '" style="width:160px"></div></div>' +
+    el.innerHTML = '<div class="row" style="justify-content:space-between"><h2>' + t('tCpa') + '</h2>' + periodPicker() + '</div>' +
       '<p class="muted" style="margin-top:-6px">' + esc(t('cpaHelp')) + (pending ? ' <b style="color:var(--amber)">· ' + t('st').PENDING + ' ' + pending + '</b>' : '') + '</p>' +
       '<div class="card"><h3>' + t('verifiedReady') + ' — ' + m + '</h3><div class="tw">' + (ready.length ? '<table class="t"><thead><tr><th><input type="checkbox" id="cAll" checked></th><th>' + t('applicant') + '</th><th>' + t('date') + '</th><th>' + t('dAppr') + '</th><th class="n">' + t('hours') + '</th><th class="n">' + t('recognized') + '</th><th class="n">' + t('mult') + '</th><th class="n">' + t('pay') + '</th><th>' + t('suggestion') + '</th></tr></thead><tbody>' +
         ready.map(function (r) {
@@ -2013,15 +2036,14 @@ if (typeof module !== 'undefined') module.exports = LocalStore;
         docs.map(function (d) {
           return '<tr' + (d.status === 'VOID' ? ' class="dim"' : '') + '><td class="mono"><b>' + esc(d.id) + '</b></td><td class="mono small">' + (d.periodFrom ? d.periodFrom + ' ~ ' + d.periodTo : d.month) + '</td><td class="mono small">' + fmtTs(d.createdAt) + '</td><td>' + esc(d.createdBy) + '</td><td class="n">' + n2(d.totalHours) + '</td><td class="n">' + money(d.totalPay) + '</td><td>' + (d.status === 'VOID' ? '<span class="b REJECTED">VOID</span>' : '<span class="b CPA">ISSUED</span>') + '</td><td><button class="btn sm" data-view="' + esc(d.id) + '">' + t('view') + '</button></td></tr>';
         }).join('') + '</tbody></table>' : '<div class="empty">' + t('noData') + '</div>') + '</div></div>';
-    $('#cpFrom').onchange = function () { S.cpaFrom = this.value; render(); };
-    $('#cpTo').onchange = function () { S.cpaTo = this.value; render(); };
+    bindPeriod();
     var ca = $('#cAll'); if (ca) ca.onchange = function () { $$('[data-cid]', el).forEach(function (c) { c.checked = ca.checked; }); };
     var ci = $('#cIssue');
     if (ci) ci.onclick = function () {
       var ids = $$('[data-cid]', el).filter(function (c) { return c.checked; }).map(function (c) { return c.getAttribute('data-cid'); });
       if (!ids.length) return;
       ci.disabled = true;
-      call('issueDoc', { from: pf, to: pt, ids: ids }).then(function (d) { toast(t('issued') + ' — ' + d.doc.id); S.docView = d.doc.id; S.cpaFrom = null; S.cpaTo = null; return load(); })
+      call('issueDoc', { from: pf, to: pt, ids: ids }).then(function (d) { toast(t('issued') + ' — ' + d.doc.id); S.docView = d.doc.id; S.cpaFrom = null; S.cpaTo = null; S.verify = null; return load(); })
         .catch(function (e) { toast(errMsg(e), true); ci.disabled = false; });
     };
     $$('[data-view]', el).forEach(function (b) { b.onclick = function () { S.docView = b.getAttribute('data-view'); S.docLang = null; render(); }; });
