@@ -780,6 +780,25 @@ var OTCore = (function () {
         return { ok: true };
       },
 
+      /** Employee: own Time Clock days with overtime + processing status (own data only). */
+      myClock: function (p) {
+        var u = auth(p);
+        var month = String(p.month || '').slice(0, 7);
+        if (!/^\d{4}-\d{2}$/.test(month)) err('MONTH', 'Invalid month');
+        if (!u.timeClockName) return { days: [], linked: false };
+        var from = month + '-01', to = addDays(addDays(month + '-28', 4).slice(0, 7) + '-01', -1);
+        var s = settings(), hol = holidays();
+        var all = punchesFor(from, to);
+        var mine = {}; mine[u.id] = all[u.id] || [];
+        var reqs = store.read('Requests').filter(function (r) { return r.empId === u.id && String(r.date).slice(0, 7) === month && [STATUS.REJECTED, STATUS.CANCELLED, STATUS.EXPIRED].indexOf(r.status) < 0; });
+        var days = clockCandidates(mine, [u], hol, s, month).map(function (c) {
+          var rs = reqs.filter(function (r) { return r.date === c.date; });
+          return { date: c.date, offDay: c.offDay, sched: c.sched, punches: c.punches, anomalies: c.anomalies, otLabel: c.otLabel, otHours: c.otHours,
+            status: rs.length ? rs[0].status : '', recognizedHours: rs.length ? rs[0].recognizedHours : '', preApproved: rs.length ? rs[0].preApproved : '', docId: rs.length ? rs[0].docId : '' };
+        });
+        return { days: days, linked: true, startDate: s.startDate || '' };
+      },
+
       timelog: function (p) {
         var u = auth(p); need(u, 'admin');
         var by = punchesFor(p.from, p.to);
