@@ -1,0 +1,1831 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JNFAM Overtime</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f6f7f5; --paper:#ffffff; --ink:#16201c; --ink2:#4b5853; --muted:#7c8884; --line:#dfe3e0; --line2:#eef0ee;
+  --pri:#0f5c4d; --pri-2:#e3efeb; --pri-ink:#ffffff;
+  --amber:#a35a00; --amber-bg:#fff6e6; --amber-line:#f2d29b;
+  --red:#b42318; --red-bg:#fdecea; --green:#16794a; --green-bg:#e7f5ec; --blue:#1d4ed8; --blue-bg:#e9effd;
+  --grey-bg:#eef0ef; --violet:#6d28d9; --violet-bg:#f1ebfd;
+  --r:10px; --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+  --sans:'IBM Plex Sans KR','IBM Plex Sans',system-ui,-apple-system,'Segoe UI','Malgun Gothic',sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5}
+button,input,select,textarea{font:inherit;color:inherit}
+.num,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+a{color:var(--pri)}
+
+/* ---------- top bar ---------- */
+.top{position:sticky;top:0;z-index:20;background:var(--paper);border-bottom:1px solid var(--line)}
+.top-in{max-width:1240px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:8px;font-weight:700;letter-spacing:-.01em}
+.brand b{font-size:17px}
+.brand span{font-size:12px;color:var(--muted);font-weight:500}
+.clock{font-family:var(--mono);font-size:12px;color:var(--ink2);background:var(--grey-bg);padding:3px 8px;border-radius:6px}
+.clock.demo{background:var(--violet-bg);color:var(--violet)}
+.sp{flex:1}
+.lang{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.lang button{border:0;background:transparent;padding:4px 10px;cursor:pointer;font-size:12px;font-weight:600;color:var(--muted)}
+.lang button.on{background:var(--ink);color:#fff}
+.who{font-size:13px;color:var(--ink2)}
+.tabs{max-width:1240px;margin:0 auto;padding:0 16px;display:flex;gap:2px;overflow-x:auto}
+.tabs button{border:0;background:none;padding:10px 12px;cursor:pointer;color:var(--ink2);font-weight:600;border-bottom:2px solid transparent;white-space:nowrap}
+.tabs button.on{color:var(--pri);border-bottom-color:var(--pri)}
+.tabs .cnt{display:inline-block;min-width:18px;padding:0 5px;margin-left:4px;border-radius:9px;background:var(--red);color:#fff;font-size:11px;line-height:18px;text-align:center}
+
+main{max-width:1240px;margin:0 auto;padding:18px 16px 60px}
+h2{font-size:19px;margin:4px 0 14px;letter-spacing:-.01em}
+h3{font-size:15px;margin:0 0 10px}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:14px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px 14px}
+.kv label,.field label{display:block;font-size:11.5px;color:var(--muted);font-weight:600;margin-bottom:3px;text-transform:none}
+.kv div{font-weight:600}
+.muted{color:var(--muted)} .small{font-size:12px}
+.right{text-align:right}
+
+/* ---------- controls ---------- */
+input[type=text],input[type=number],input[type=date],input[type=time],input[type=email],input[type=password],input[type=month],input[type=datetime-local],select,textarea{
+  border:1px solid var(--line);background:#fff;border-radius:7px;padding:6px 8px;min-height:34px;width:100%}
+textarea{min-height:60px;resize:vertical}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--pri-2);border-color:var(--pri)}
+.btn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 13px;cursor:pointer;font-weight:600;white-space:nowrap}
+.btn:hover{border-color:var(--ink2)}
+.btn.pri{background:var(--pri);border-color:var(--pri);color:var(--pri-ink)}
+.btn.pri:hover{filter:brightness(1.08)}
+.btn.ok{background:var(--green);border-color:var(--green);color:#fff}
+.btn.no{color:var(--red);border-color:#f1c4bf}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn.sm{padding:4px 9px;font-size:12px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* ---------- policy ---------- */
+.policy{border:1px solid var(--amber-line);background:var(--amber-bg);border-radius:var(--r);padding:12px 14px;margin-bottom:14px;color:#5c3700}
+.policy b.h{display:block;font-size:14.5px;color:var(--amber);margin-bottom:4px}
+.policy ul{margin:4px 0 0 18px;padding:0}
+.ack{display:flex;gap:9px;align-items:flex-start;padding:12px;border:1px dashed var(--amber-line);border-radius:8px;background:#fffdf8;margin:12px 0}
+.ack input{margin-top:3px;width:18px;height:18px;flex:none}
+
+/* ---------- tables ---------- */
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:#fff}
+table.t{border-collapse:collapse;width:100%;font-size:13px}
+table.t th{background:#f3f5f4;color:var(--ink2);font-weight:600;font-size:12px;text-align:left;padding:8px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.t td{padding:7px 8px;border-bottom:1px solid var(--line2);vertical-align:middle}
+table.t tr:last-child td{border-bottom:0}
+table.t tfoot td{background:#fafbfa;font-weight:700;border-top:1px solid var(--line)}
+table.t td.n,table.t th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+table.lines td{padding:5px}
+table.lines input,table.lines select{min-height:32px;padding:4px 6px}
+table.lines td.calc{font-family:var(--mono);text-align:right;white-space:nowrap}
+tr.dim td{opacity:.55}
+table.t td.mono{white-space:nowrap}
+
+/* ---------- badges ---------- */
+.b{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11.5px;font-weight:700;white-space:nowrap;border:1px solid transparent}
+.b.PENDING{background:var(--amber-bg);color:var(--amber);border-color:var(--amber-line)}
+.b.APPROVED{background:var(--blue-bg);color:var(--blue)}
+.b.VERIFIED{background:var(--green-bg);color:var(--green)}
+.b.CPA{background:var(--pri);color:#fff}
+.b.REJECTED{background:var(--red-bg);color:var(--red)}
+.b.EXPIRED{background:var(--grey-bg);color:var(--red);border-color:#f1c4bf}
+.b.CANCELLED{background:var(--grey-bg);color:var(--muted)}
+.b.OK{background:var(--green-bg);color:var(--green)}
+.b.PARTIAL{background:var(--amber-bg);color:var(--amber)}
+.b.NO_RECORD,.b.NO_OVERLAP{background:var(--red-bg);color:var(--red)}
+.b.CHECK{background:var(--violet-bg);color:var(--violet)}
+.b.MANUAL{background:var(--grey-bg);color:var(--ink2)}
+.b.Y{background:var(--amber-bg);color:var(--amber)}
+
+.empty{padding:28px;text-align:center;color:var(--muted)}
+.pending-card{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px;background:#fff}
+.pending-card .when{font-family:var(--mono);font-size:15px;font-weight:600}
+.countdown{font-size:12px;font-weight:700}
+.countdown.soon{color:var(--red)} .countdown.ok{color:var(--green)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.stat{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.stat .l{font-size:11.5px;color:var(--muted);font-weight:600}
+.stat .v{font-family:var(--mono);font-size:20px;font-weight:600}
+
+/* ---------- login ---------- */
+.login{max-width:400px;margin:8vh auto;padding:0 16px}
+.login .card{padding:24px}
+.login h1{font-size:21px;margin:0 0 2px}
+.login .sub{color:var(--muted);margin-bottom:18px}
+.field{margin-bottom:12px}
+
+/* ---------- toast / modal ---------- */
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:100;display:flex;flex-direction:column;gap:6px;align-items:center}
+.toast{background:var(--ink);color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.18);max-width:90vw}
+.toast.err{background:var(--red)}
+.modal-bg{position:fixed;inset:0;background:rgba(15,25,20,.38);z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:6vh 16px;overflow:auto}
+.modal{background:#fff;border-radius:12px;max-width:620px;width:100%;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.modal h3{font-size:16px}
+.modal .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.demo-bar{background:var(--violet-bg);color:var(--violet);font-size:12.5px;padding:6px 16px;text-align:center;border-bottom:1px solid #ddd0fa}
+
+/* ---------- CPA document ---------- */
+.doc-wrap{background:#e9ecea;padding:18px;border-radius:10px;overflow-x:auto}
+.doc{background:#fff;color:#111;width:8.5in;min-height:11in;margin:0 auto;padding:.6in .6in .5in;font-size:11.5px;line-height:1.45;box-shadow:0 2px 14px rgba(0,0,0,.12);font-family:var(--sans)}
+.doc .lh{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2.5px solid #0f5c4d;padding-bottom:8px;margin-bottom:14px}
+.doc .lh .co{font-size:19px;font-weight:700;letter-spacing:.02em;color:#0f5c4d}
+.doc .lh .ad{font-size:10.5px;color:#444;text-align:right}
+.doc h1{font-size:17px;text-align:center;margin:6px 0 2px;letter-spacing:-.01em}
+.doc .h1s{text-align:center;color:#555;font-size:11px;margin-bottom:12px}
+.doc table{border-collapse:collapse;width:100%;margin-bottom:10px}
+.doc th,.doc td{border:1px solid #b9c0bc;padding:4px 6px;vertical-align:top}
+.doc th{background:#eef2f0;font-weight:600;text-align:left;font-size:10.5px}
+.doc td.n,.doc th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.doc .meta td:nth-child(odd){background:#f6f8f7;font-weight:600;width:18%}
+.doc .pol{border:1.5px solid #a35a00;background:#fff8ec;padding:8px 10px;margin:10px 0 12px;font-size:11px}
+.doc .pol b{color:#a35a00}
+.doc h4{font-size:12px;margin:12px 0 5px;color:#0f5c4d}
+.doc .tot td{font-weight:700;background:#f6f8f7}
+.doc .sig{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-top:22px}
+.doc .sig > div{border-top:1px solid #333;padding-top:4px;font-size:10.5px}
+.doc .sig .sl{height:34px;border:0}
+.doc table.det{table-layout:fixed}
+.doc .foot{margin-top:16px;font-size:9.5px;color:#666;border-top:1px solid #ddd;padding-top:6px}
+.doc .void{color:#b42318;font-weight:700;font-size:28px;text-align:center;border:3px solid #b42318;padding:4px;margin-bottom:10px}
+
+@media (max-width:720px){
+  .top-in{gap:8px}
+  .doc{width:auto;min-height:0;padding:20px}
+  .hide-m{display:none}
+}
+@media print{
+  @page{size:letter;margin:0}
+  body{background:#fff}
+  body.printing > *:not(#printArea){display:none!important}
+  #printArea{display:block!important}
+  #printArea .doc{box-shadow:none;margin:0;width:auto;min-height:0;padding:.5in}
+  #printArea .doc table{page-break-inside:auto}
+  #printArea .doc tr{page-break-inside:avoid}
+}
+#printArea{display:none}
+.doc th.n{font-family:var(--sans);white-space:normal}
+
+body.busy::before{content:'';position:fixed;top:0;left:0;height:3px;width:40%;background:var(--pri);z-index:200;animation:busy 1.1s ease-in-out infinite}
+body.busy{cursor:progress}
+@keyframes busy{0%{left:-40%}100%{left:100%}}
+
+</style>
+<script>
+/* ============ CONFIG ============
+ * API_URL: Apps Script 웹앱 배포 URL (…/exec).
+ * 비워두면 데모 모드(브라우저 저장)로 동작합니다.
+ * Leave empty for demo mode (browser storage).
+ * ================================= */
+window.OT_CONFIG = { API_URL: 'https://script.google.com/macros/s/AKfycbzXcgMEndFYhA3C46Vn7iFqy-bUrr2N97rDapAvL0c5p-hfv2cAwJTZ8281Vthko_AVxA/exec' };
+</script>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast"></div>
+<div id="printArea"></div>
+<script>
+/* ============================================================
+ * JNFAM Overtime — shared core (runs in browser demo AND Apps Script)
+ * Pure logic + API handlers. Storage is injected via `store`.
+ * ============================================================ */
+var OTCore = (function () {
+  'use strict';
+
+  var VERSION = '1.0.0';
+
+  var STATUS = {
+    PENDING: 'PENDING', APPROVED: 'APPROVED', REJECTED: 'REJECTED',
+    CANCELLED: 'CANCELLED', EXPIRED: 'EXPIRED', VERIFIED: 'VERIFIED', CPA: 'CPA'
+  };
+
+  var COLUMNS = {
+    Employees: ['id', 'name', 'nameEn', 'timeClockName', 'email', 'dept', 'rate', 'roles', 'pin', 'active', 'schedStart', 'schedEnd'],
+    Requests: ['id', 'groupId', 'empId', 'empName', 'date', 'start', 'end', 'breakMin', 'otType', 'description',
+      'hours', 'premium', 'multiplier', 'status', 'ack', 'submittedAt', 'decidedAt', 'decidedBy', 'decidedByName',
+      'decisionComment', 'actualIn', 'actualOut', 'actualHours', 'verifyResult', 'recognizedHours', 'rate', 'pay',
+      'verifyNote', 'verifiedAt', 'verifiedBy', 'docId'],
+    Holidays: ['date', 'name'],
+    Settings: ['key', 'value'],
+    Docs: ['id', 'month', 'createdAt', 'createdBy', 'requestIds', 'totalHours', 'totalPay', 'status', 'note'],
+    Log: ['ts', 'user', 'action', 'target', 'detail']
+  };
+
+  var DEFAULT_SETTINGS = {
+    companyName: 'JNF AM LLC',
+    address: '825 Great SW Pkwy, South Fulton, GA 30336',
+    phone: '770 727 8061',
+    weekdayMultiplier: '1',
+    premiumMultiplier: '1.5',
+    premiumSaturday: 'TRUE',
+    premiumSunday: 'FALSE',
+    graceMinutes: '10',
+    reviewMinutes: '15',
+    cpaName: '',
+    cpaEmail: '',
+    adminEmail: '',
+    ccEmail: '',
+    appUrl: '',
+    otTypes: '배관 작업|Piping work\n생산 작업|Production\n출하·선적|Shipping / Loading\n설비 보수|Maintenance\n재고·창고|Inventory / Warehouse\n기타|Other',
+    timeClockSheetId: '1vkmFYoxJji64zWKL2d3-L6nQ-OoVfg-TAjGJY6HOPPg',
+    timeClockSheetName: 'TimeLog'
+  };
+
+  /* ---------------- pure helpers ---------------- */
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function round2(x) { return Math.round((Number(x) || 0) * 100) / 100; }
+  function toMin(t) {
+    if (!t) return NaN;
+    var p = String(t).trim().split(':');
+    return Number(p[0]) * 60 + Number(p[1] || 0) + Number(p[2] || 0) / 60;
+  }
+  function minToHHMM(m) {
+    m = Math.round(m);
+    var d = Math.floor(m / 1440); m = m - d * 1440;
+    return pad(Math.floor(m / 60)) + ':' + pad(m % 60) + (d > 0 ? ' (+' + d + ')' : '');
+  }
+  function addDays(dateStr, n) {
+    var d = new Date(dateStr + 'T12:00:00Z');
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate());
+  }
+  function weekday(dateStr) { return new Date(dateStr + 'T12:00:00Z').getUTCDay(); } // 0=Sun
+  function isTrue(v) { return v === true || String(v).toUpperCase() === 'TRUE' || v === '1' || v === 1; }
+
+  /** Net OT hours for a window. end <= start means it crosses midnight. */
+  function calcHours(start, end, breakMin) {
+    var s = toMin(start), e = toMin(end);
+    if (isNaN(s) || isNaN(e)) return 0;
+    if (e <= s) e += 1440;
+    return round2(Math.max(0, (e - s - (Number(breakMin) || 0))) / 60);
+  }
+  function windowOf(req) {
+    var s = toMin(req.start), e = toMin(req.end);
+    if (e <= s) e += 1440;
+    return { s: s, e: e };
+  }
+
+  function holidaySet(holidays) {
+    var m = {};
+    (holidays || []).forEach(function (h) { if (h.date) m[String(h.date).slice(0, 10)] = h.name || true; });
+    return m;
+  }
+  function isPremiumDay(dateStr, holidays, settings) {
+    var wd = weekday(dateStr);
+    if (wd === 6 && isTrue(settings.premiumSaturday)) return true;
+    if (wd === 0 && isTrue(settings.premiumSunday)) return true;
+    return !!holidaySet(holidays)[dateStr];
+  }
+  function multiplierFor(dateStr, holidays, settings) {
+    return isPremiumDay(dateStr, holidays, settings) ? Number(settings.premiumMultiplier) || 1.5 : Number(settings.weekdayMultiplier) || 1;
+  }
+
+  /** US federal holidays (observed) for a year. */
+  function federalHolidays(year) {
+    function nth(month, dow, n) { // n=-1 last
+      if (n > 0) {
+        var d = new Date(Date.UTC(year, month, 1));
+        var add = (dow - d.getUTCDay() + 7) % 7 + (n - 1) * 7;
+        d.setUTCDate(1 + add); return d;
+      }
+      var last = new Date(Date.UTC(year, month + 1, 0));
+      last.setUTCDate(last.getUTCDate() - ((last.getUTCDay() - dow + 7) % 7));
+      return last;
+    }
+    function fixed(month, day) {
+      var d = new Date(Date.UTC(year, month, day));
+      if (d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() - 1);
+      else if (d.getUTCDay() === 0) d.setUTCDate(d.getUTCDate() + 1);
+      return d;
+    }
+    function fmt(d) { return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()); }
+    return [
+      [fixed(0, 1), "New Year's Day"], [nth(0, 1, 3), 'Martin Luther King Jr. Day'],
+      [nth(1, 1, 3), "Presidents' Day"], [nth(4, 1, -1), 'Memorial Day'],
+      [fixed(5, 19), 'Juneteenth'], [fixed(6, 4), 'Independence Day'],
+      [nth(8, 1, 1), 'Labor Day'], [nth(9, 1, 2), 'Columbus Day'],
+      [fixed(10, 11), 'Veterans Day'], [nth(10, 4, 4), 'Thanksgiving Day'],
+      [fixed(11, 25), 'Christmas Day']
+    ].map(function (x) { return { date: fmt(x[0]), name: x[1] }; });
+  }
+
+  /**
+   * Match Time Clock punches against an approved OT window.
+   * punches: [{date:'YYYY-MM-DD', time:'H:MM:SS', type:'IN'|'OUT'}] for ONE employee.
+   */
+  var MAX_SHIFT = 18 * 60; // an IN/OUT pair longer than this is treated as a missing punch
+  function buildIntervals(punches, date) {
+    var d0 = date, d1 = addDays(date, 1);
+    var pts = (punches || []).filter(function (p) { return p.date === d0 || p.date === d1; })
+      .map(function (p) {
+        return { m: (p.date === d0 ? 0 : 1440) + toMin(p.time), type: String(p.type).toUpperCase() };
+      }).filter(function (p) { return !isNaN(p.m); })
+      .sort(function (a, b) { return a.m - b.m; });
+    var intervals = [], anomalies = [], open = null;
+    pts.forEach(function (p) {
+      if (p.type === 'IN') {
+        if (open) {
+          if (p.m - open.m > MAX_SHIFT || p.m >= 1440) { if (open.m < 1440) anomalies.push('MISSING_OUT'); open = p; }
+          else if (open.m < 1440) anomalies.push('DOUBLE_IN');
+        } else open = p;
+      } else if (p.type === 'OUT') {
+        if (open && p.m - open.m <= MAX_SHIFT) { intervals.push({ s: open.m, e: p.m }); open = null; }
+        else if (open) { if (open.m < 1440) anomalies.push('MISSING_OUT'); open = null; }
+        else if (p.m < 1440) anomalies.push('OUT_WITHOUT_IN');
+      }
+    });
+    if (open && open.m < 1440 && anomalies.indexOf('MISSING_OUT') < 0) anomalies.push('MISSING_OUT');
+    // keep only intervals that start on the date
+    intervals = intervals.filter(function (iv) { return iv.s < 1440; });
+    return { intervals: intervals, anomalies: anomalies };
+  }
+
+  function matchPunches(punches, req, graceMinutes) {
+    var b = buildIntervals(punches, req.date);
+    var intervals = b.intervals, anomalies = b.anomalies;
+
+    var w = windowOf(req);
+    var overlap = 0;
+    intervals.forEach(function (iv) { overlap += Math.max(0, Math.min(iv.e, w.e) - Math.max(iv.s, w.s)); });
+
+    var gross = w.e - w.s;
+    var net = calcHours(req.start, req.end, req.breakMin);
+    var grace = Number(graceMinutes) || 0;
+    var result, recognized;
+    if (!intervals.length && !anomalies.length) { result = 'NO_RECORD'; recognized = 0; }
+    else if (overlap >= gross - grace) { result = 'OK'; recognized = net; }
+    else if (overlap <= 0) { result = 'NO_OVERLAP'; recognized = 0; }
+    else { result = 'PARTIAL'; recognized = round2(Math.max(0, Math.min(net, (overlap - (Number(req.breakMin) || 0)) / 60))); }
+    if (anomalies.length && result === 'OK') result = 'CHECK';
+    else if (anomalies.length && result !== 'NO_RECORD') result = result === 'PARTIAL' ? 'PARTIAL' : 'CHECK';
+    if (anomalies.indexOf('MISSING_OUT') >= 0) result = 'CHECK';
+
+    var actualIn = intervals.length ? minToHHMM(intervals[0].s) : '';
+    var actualOut = intervals.length ? minToHHMM(intervals[intervals.length - 1].e) : '';
+    return {
+      intervals: intervals.map(function (iv) { return minToHHMM(iv.s) + '–' + minToHHMM(iv.e); }),
+      actualIn: actualIn, actualOut: actualOut,
+      overlapHours: round2(overlap / 60),
+      anomalies: anomalies, result: result, recognizedHours: recognized, approvedHours: net
+    };
+  }
+
+  /**
+   * Extra time in Time Clock NOT covered by any approved request (not recognized).
+   * Weekday: time worked after scheduled end (and before schedStart - 60min).
+   * Premium day / weekend: all worked time.
+   */
+  function unapprovedExtra(punchesByEmp, employees, requests, holidays, settings, month) {
+    var grace = Number(settings.reviewMinutes) || 15;
+    var out = [];
+    employees.forEach(function (emp) {
+      var ps = punchesByEmp[emp.id] || [];
+      var dates = {};
+      ps.forEach(function (p) { if (String(p.date).slice(0, 7) === month) dates[p.date] = 1; });
+      Object.keys(dates).sort().forEach(function (date) {
+        var ivs = buildIntervals(ps, date).intervals;
+        var label = ivs.map(function (iv) { return minToHHMM(iv.s) + '–' + minToHHMM(iv.e); }).join(', ');
+        if (!ivs.length) return;
+        var wd = weekday(date);
+        var offDay = wd === 0 || wd === 6 || isPremiumDay(date, holidays, settings);
+        var schedS = toMin(emp.schedStart || '09:00'), schedE = toMin(emp.schedEnd || '17:00');
+        var extra = [];
+        ivs.forEach(function (iv) {
+          if (offDay) { extra.push({ s: iv.s, e: iv.e }); return; }
+          if (iv.e > schedE) extra.push({ s: Math.max(iv.s, schedE), e: iv.e });
+          if (iv.s < schedS - 60) extra.push({ s: iv.s, e: Math.min(iv.e, schedS - 60) });
+        });
+        // subtract windows of approved/verified/cpa requests
+        var covered = requests.filter(function (r) {
+          return r.empId === emp.id && r.date === date && [STATUS.APPROVED, STATUS.VERIFIED, STATUS.CPA].indexOf(r.status) >= 0;
+        }).map(windowOf);
+        var mins = 0;
+        extra.forEach(function (x) {
+          var segs = [x];
+          covered.forEach(function (c) {
+            var next = [];
+            segs.forEach(function (sg) {
+              if (c.e <= sg.s || c.s >= sg.e) { next.push(sg); return; }
+              if (c.s > sg.s) next.push({ s: sg.s, e: c.s });
+              if (c.e < sg.e) next.push({ s: c.e, e: sg.e });
+            });
+            segs = next;
+          });
+          segs.forEach(function (sg) { mins += Math.max(0, sg.e - sg.s); });
+        });
+        if (mins > grace) {
+          out.push({
+            empId: emp.id, empName: emp.name, date: date, offDay: offDay,
+            punches: label, extraHours: round2(mins / 60),
+            hasRequest: requests.some(function (r) { return r.empId === emp.id && r.date === date; })
+          });
+        }
+      });
+    });
+    return out;
+  }
+
+  /* ---------------- API ---------------- */
+  function create(store) {
+    function err(code, msg) { var e = new Error(msg || code); e.code = code; throw e; }
+
+    function settings() {
+      var s = {};
+      Object.keys(DEFAULT_SETTINGS).forEach(function (k) { s[k] = DEFAULT_SETTINGS[k]; });
+      store.read('Settings').forEach(function (r) { if (r.key) s[r.key] = r.value; });
+      return s;
+    }
+    function employees() { return store.read('Employees'); }
+    function holidays() { return store.read('Holidays').filter(function (h) { return h.date; }); }
+    function rolesOf(emp) { return String(emp.roles || '').split(/[,\s]+/).filter(Boolean); }
+    function has(emp, role) { return rolesOf(emp).indexOf(role) >= 0; }
+    function log(user, action, target, detail) {
+      try { store.append('Log', { ts: store.nowET(), user: user ? user.id : '', action: action, target: target || '', detail: typeof detail === 'string' ? detail : JSON.stringify(detail || '') }); } catch (e) { }
+    }
+
+    function seedIfEmpty() {
+      if (employees().length) return;
+      var emps = [
+        { id: 'admin', name: '관리자', nameEn: 'Administrator', timeClockName: '', email: '', dept: 'Admin', rate: '0', roles: 'admin,approver', pin: '1234', active: 'TRUE', schedStart: '09:00', schedEnd: '17:00' },
+        { id: 'E001', name: '김태희', nameEn: 'TaeHee Kim', timeClockName: '김태희', email: '', dept: 'Operations', rate: '30', roles: 'employee', pin: '0000', active: 'TRUE', schedStart: '09:00', schedEnd: '17:00' },
+        { id: 'E002', name: '이무원', nameEn: 'MooWon Lee', timeClockName: '이무원', email: '', dept: 'Operations', rate: '30', roles: 'employee', pin: '0000', active: 'TRUE', schedStart: '09:00', schedEnd: '17:00' },
+        { id: 'E003', name: '최재수', nameEn: 'Jaesoo Choi', timeClockName: '최재수', email: '', dept: 'Operations', rate: '30', roles: 'employee', pin: '0000', active: 'TRUE', schedStart: '09:00', schedEnd: '17:00' },
+        { id: 'E004', name: 'MASUD KHANDAKER', nameEn: 'MASUD KHANDAKER', timeClockName: 'MASUD KHANDAKER', email: '', dept: 'Production', rate: '30', roles: 'employee', pin: '0000', active: 'TRUE', schedStart: '08:00', schedEnd: '16:00' },
+        { id: 'E005', name: 'JOHNETTE', nameEn: 'JOHNETTE K', timeClockName: 'JOHNETTE', email: '', dept: 'Production', rate: '30', roles: 'employee', pin: '0000', active: 'TRUE', schedStart: '08:00', schedEnd: '16:00' }
+      ];
+      store.replaceAll('Employees', emps);
+      if (!store.read('Holidays').length) store.replaceAll('Holidays', [{ date: '2026-01-01', name: "New Year's Day" }]);
+    }
+
+    function auth(p) {
+      var empId = p && p.token ? store.sessionGet(p.token) : null;
+      if (!empId) err('AUTH', 'Session expired. Please log in again.');
+      var u = employees().filter(function (e) { return e.id === empId && isTrue(e.active); })[0];
+      if (!u) err('AUTH', 'User not found');
+      return u;
+    }
+    function need(u, role) { if (!has(u, role) && !has(u, 'admin')) err('FORBIDDEN', 'Permission denied'); }
+
+    function publicEmp(e, full) {
+      var o = { id: e.id, name: e.name, nameEn: e.nameEn, dept: e.dept, roles: e.roles, active: e.active, schedStart: e.schedStart, schedEnd: e.schedEnd };
+      if (full) { o.timeClockName = e.timeClockName; o.email = e.email; o.rate = e.rate; o.hasPin = !!e.pin; }
+      return o;
+    }
+
+    function expireStale() {
+      var now = store.nowET();
+      store.read('Requests').forEach(function (r) {
+        if ((r.status === STATUS.PENDING) && (r.date + 'T' + r.start) <= now.slice(0, 16)) {
+          r.status = STATUS.EXPIRED;
+          r.decisionComment = (r.decisionComment ? r.decisionComment + ' / ' : '') + 'Auto-expired: not approved before start';
+          store.upsert('Requests', 'id', r);
+        }
+      });
+    }
+
+    function mailApprovers(reqs, user, s) {
+      var to = employees().filter(function (e) { return isTrue(e.active) && (has(e, 'approver')) && e.email && e.id !== user.id; })
+        .map(function (e) { return e.email; });
+      if (s.adminEmail) to.push(s.adminEmail);
+      to = to.filter(function (v, i, a) { return a.indexOf(v) === i; });
+      if (!to.length) return;
+      var rows = reqs.map(function (r) {
+        return '<tr><td>' + r.date + '</td><td>' + r.start + '–' + r.end + '</td><td>' + r.hours + 'h</td><td>' + esc(r.otType) + '</td><td>' + esc(r.description) + '</td></tr>';
+      }).join('');
+      var html = '<div style="font-family:Arial,sans-serif;font-size:14px">'
+        + '<p><b>' + esc(user.name) + '</b> 님이 오버타임 사전 승인을 요청했습니다. / ' + esc(user.nameEn || user.name) + ' submitted an overtime pre-approval request.</p>'
+        + '<table border="1" cellpadding="6" style="border-collapse:collapse"><tr><th>Date</th><th>Time</th><th>Hours</th><th>Type</th><th>Description</th></tr>' + rows + '</table>'
+        + '<p style="color:#b45309">※ 시작 시각 전에 승인되지 않으면 자동 만료되어 인정되지 않습니다. / Requests not approved before the start time expire automatically.</p>'
+        + (s.appUrl ? '<p><a href="' + s.appUrl + '">' + s.appUrl + '</a></p>' : '') + '</div>';
+      store.sendMail(to.join(','), '[JNFAM OT] 승인 요청 / Approval request — ' + (user.nameEn || user.name), html, s.ccEmail);
+    }
+    function mailApplicant(r, decider, s) {
+      var emp = employees().filter(function (e) { return e.id === r.empId; })[0];
+      if (!emp || !emp.email) return;
+      var ok = r.status === STATUS.APPROVED;
+      var html = '<div style="font-family:Arial,sans-serif;font-size:14px">'
+        + '<p>오버타임 신청이 <b>' + (ok ? '승인' : '반려') + '</b>되었습니다. / Your overtime request was <b>' + (ok ? 'APPROVED' : 'REJECTED') + '</b>.</p>'
+        + '<p>' + r.date + ' ' + r.start + '–' + r.end + ' (' + r.hours + 'h) · ' + esc(r.otType) + '</p>'
+        + (r.decisionComment ? '<p>Comment: ' + esc(r.decisionComment) + '</p>' : '')
+        + '<p>Approver: ' + esc(decider.nameEn || decider.name) + ' · ' + r.decidedAt + ' ET</p></div>';
+      store.sendMail(emp.email, '[JNFAM OT] ' + (ok ? '승인 Approved' : '반려 Rejected') + ' — ' + r.date, html, '');
+    }
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+    function punchesFor(from, to) {
+      var emps = employees();
+      var byName = {};
+      emps.forEach(function (e) { if (e.timeClockName) byName[String(e.timeClockName).trim()] = e.id; });
+      var raw = store.timelog(from, addDays(to, 1));
+      var by = {};
+      raw.forEach(function (p) {
+        var id = byName[String(p.name).trim()];
+        if (!id) return;
+        (by[id] = by[id] || []).push({ date: p.date, time: p.time, type: p.type });
+      });
+      return by;
+    }
+
+    var handlers = {
+      ping: function () { return { ok: true, version: VERSION, nowET: store.nowET() }; },
+
+      loginList: function () {
+        seedIfEmpty();
+        return { employees: employees().filter(function (e) { return isTrue(e.active); }).map(function (e) { return { id: e.id, name: e.name, nameEn: e.nameEn }; }) };
+      },
+
+      login: function (p) {
+        seedIfEmpty();
+        var u = employees().filter(function (e) { return e.id === p.empId && isTrue(e.active); })[0];
+        if (!u || String(u.pin) !== String(p.pin)) err('LOGIN', 'Invalid ID or PIN');
+        var token = store.uuid();
+        store.sessionSet(token, u.id);
+        log(u, 'login');
+        return { token: token };
+      },
+
+      bootstrap: function (p) {
+        var u = auth(p);
+        expireStale();
+        var isAdmin = has(u, 'admin'), isApprover = has(u, 'approver') || isAdmin;
+        var reqs = store.read('Requests');
+        if (!isApprover) reqs = reqs.filter(function (r) { return r.empId === u.id; });
+        if (!isAdmin) reqs = reqs.map(function (r) { if (r.empId !== u.id) { var c = {}; for (var k in r) c[k] = r[k]; c.rate = ''; c.pay = ''; return c; } return r; });
+        return {
+          user: publicEmp(u, true),
+          roles: rolesOf(u),
+          employees: employees().map(function (e) { return publicEmp(e, isAdmin); }),
+          settings: settings(),
+          holidays: holidays(),
+          requests: reqs,
+          docs: isAdmin ? store.read('Docs') : [],
+          nowET: store.nowET()
+        };
+      },
+
+      submit: function (p) {
+        var u = auth(p);
+        if (!p.ack) err('ACK', 'Pre-approval policy must be acknowledged');
+        var lines = p.lines || [];
+        if (!lines.length) err('EMPTY', 'No lines');
+        var s = settings(), hol = holidays(), now = store.nowET();
+        var empId = u.id;
+        var mine = store.read('Requests').filter(function (r) {
+          return r.empId === empId && [STATUS.REJECTED, STATUS.CANCELLED, STATUS.EXPIRED].indexOf(r.status) < 0;
+        });
+        var groupId = 'G' + now.replace(/\D/g, '').slice(2, 14);
+        var created = [];
+        return store.lock(function () {
+          var seq = store.read('Requests').length;
+          lines.forEach(function (l, i) {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(l.date || '')) err('DATE', 'Invalid date (line ' + (i + 1) + ')');
+            if (!/^\d{1,2}:\d{2}$/.test(l.start || '') || !/^\d{1,2}:\d{2}$/.test(l.end || '')) err('TIME', 'Invalid time (line ' + (i + 1) + ')');
+            var start = pad(Math.floor(toMin(l.start) / 60)) + ':' + pad(toMin(l.start) % 60);
+            var end = pad(Math.floor(toMin(l.end) / 60)) + ':' + pad(toMin(l.end) % 60);
+            if ((l.date + 'T' + start) <= now.slice(0, 16)) err('PAST', 'PAST:' + l.date + ' ' + start);
+            var hours = calcHours(start, end, l.breakMin);
+            if (hours <= 0) err('HOURS', 'OT hours must be > 0 (line ' + (i + 1) + ')');
+            if (hours > 16) err('HOURS', 'OT hours too long (line ' + (i + 1) + ')');
+            if (!String(l.description || '').trim()) err('DESC', 'Description required (line ' + (i + 1) + ')');
+            var w = windowOf({ start: start, end: end });
+            mine.concat(created).forEach(function (r) {
+              if (r.date !== l.date) return;
+              var o = windowOf(r);
+              if (w.s < o.e && o.s < w.e) err('OVERLAP', 'OVERLAP:' + l.date);
+            });
+            seq++;
+            var r = {
+              id: 'OT' + now.slice(2, 4) + now.slice(5, 7) + '-' + ('000' + seq).slice(-4) + '-' + store.uuid().slice(0, 4).toUpperCase(),
+              groupId: groupId, empId: empId, empName: u.name, date: l.date, start: start, end: end,
+              breakMin: String(Number(l.breakMin) || 0), otType: String(l.otType || ''), description: String(l.description || '').trim(),
+              hours: String(hours), premium: isPremiumDay(l.date, hol, s) ? 'Y' : 'N', multiplier: String(multiplierFor(l.date, hol, s)),
+              status: STATUS.PENDING, ack: 'TRUE', submittedAt: now
+            };
+            created.push(r);
+          });
+          created.forEach(function (r) { store.append('Requests', r); });
+          log(u, 'submit', groupId, created.map(function (r) { return r.id; }).join(','));
+          try { mailApprovers(created, u, s); } catch (e) { log(u, 'mail-error', groupId, String(e)); }
+          return { created: created };
+        });
+      },
+
+      cancel: function (p) {
+        var u = auth(p);
+        return store.lock(function () {
+          var r = store.read('Requests').filter(function (x) { return x.id === p.id; })[0];
+          if (!r) err('NOTFOUND');
+          if (r.empId !== u.id && !has(u, 'admin')) err('FORBIDDEN');
+          var now = store.nowET();
+          if (!(r.status === STATUS.PENDING || (r.status === STATUS.APPROVED && (r.date + 'T' + r.start) > now.slice(0, 16)))) err('STATE', 'Cannot cancel in this state');
+          r.status = STATUS.CANCELLED;
+          r.decisionComment = (r.decisionComment ? r.decisionComment + ' / ' : '') + 'Cancelled by ' + u.name + ' ' + now;
+          store.upsert('Requests', 'id', r);
+          log(u, 'cancel', r.id);
+          return { request: r };
+        });
+      },
+
+      decide: function (p) {
+        var u = auth(p);
+        need(u, 'approver');
+        var s = settings();
+        return store.lock(function () {
+          var r = store.read('Requests').filter(function (x) { return x.id === p.id; })[0];
+          if (!r) err('NOTFOUND');
+          if (r.empId === u.id) err('SELF', 'Self-approval is not allowed');
+          if (r.status !== STATUS.PENDING) err('STATE', 'Already processed: ' + r.status);
+          var now = store.nowET();
+          if (p.decision === 'approve') {
+            if ((r.date + 'T' + r.start) <= now.slice(0, 16)) {
+              r.status = STATUS.EXPIRED;
+              r.decisionComment = 'Auto-expired: approval attempted after start (' + now + ')';
+              store.upsert('Requests', 'id', r);
+              err('EXPIRED', 'EXPIRED');
+            }
+            r.status = STATUS.APPROVED;
+          } else {
+            if (!String(p.comment || '').trim()) err('COMMENT', 'Reason required');
+            r.status = STATUS.REJECTED;
+          }
+          r.decidedAt = now; r.decidedBy = u.id; r.decidedByName = u.nameEn || u.name;
+          r.decisionComment = String(p.comment || '');
+          store.upsert('Requests', 'id', r);
+          log(u, p.decision, r.id);
+          try { mailApplicant(r, u, s); } catch (e) { log(u, 'mail-error', r.id, String(e)); }
+          return { request: r };
+        });
+      },
+
+      /** Suggested verification results for approved requests in a month + unapproved extra time */
+      verifyPreview: function (p) {
+        var u = auth(p);
+        need(u, 'admin');
+        var month = p.month;
+        var from = month + '-01', to = addDays(addDays(month + '-28', 4).slice(0, 7) + '-01', -1);
+        var s = settings(), hol = holidays();
+        var punches = punchesFor(from, to);
+        var reqs = store.read('Requests').filter(function (r) { return String(r.date).slice(0, 7) === month; });
+        var rows = reqs.filter(function (r) { return [STATUS.APPROVED, STATUS.VERIFIED, STATUS.CPA].indexOf(r.status) >= 0; })
+          .map(function (r) { return { id: r.id, match: matchPunches(punches[r.empId] || [], r, s.graceMinutes) }; });
+        var emps = employees().filter(function (e) { return isTrue(e.active) && e.timeClockName; });
+        return {
+          rows: rows,
+          unapproved: unapprovedExtra(punches, emps, reqs, hol, s, month),
+          punchCount: Object.keys(punches).reduce(function (a, k) { return a + punches[k].length; }, 0)
+        };
+      },
+
+      verify: function (p) {
+        var u = auth(p);
+        need(u, 'admin');
+        var items = p.items || [];
+        return store.lock(function () {
+          var all = store.read('Requests'), emps = employees(), now = store.nowET(), done = [];
+          items.forEach(function (it) {
+            var r = all.filter(function (x) { return x.id === it.id; })[0];
+            if (!r) err('NOTFOUND', it.id);
+            if ([STATUS.APPROVED, STATUS.VERIFIED].indexOf(r.status) < 0) err('STATE', r.id + ': ' + r.status);
+            if ((r.date + 'T' + r.end) > now.slice(0, 16) && windowOf(r).e < 1440) err('FUTURE', 'FUTURE:' + r.id);
+            var rec = round2(it.recognizedHours);
+            if (rec < 0 || rec > Number(r.hours)) err('CAP', 'CAP:' + r.id);
+            if (it.result === 'MANUAL' && !String(it.note || '').trim()) err('NOTE', 'NOTE:' + r.id);
+            var emp = emps.filter(function (e) { return e.id === r.empId; })[0] || {};
+            r.actualIn = it.actualIn || ''; r.actualOut = it.actualOut || '';
+            r.actualHours = String(it.actualHours == null ? '' : it.actualHours);
+            r.verifyResult = it.result || 'MANUAL';
+            r.recognizedHours = String(rec);
+            r.rate = String(Number(emp.rate) || 0);
+            r.pay = String(round2(rec * (Number(emp.rate) || 0) * (Number(r.multiplier) || 1)));
+            r.verifyNote = String(it.note || '');
+            r.verifiedAt = now; r.verifiedBy = u.nameEn || u.name;
+            r.status = STATUS.VERIFIED;
+            store.upsert('Requests', 'id', r);
+            done.push(r);
+          });
+          log(u, 'verify', '', done.map(function (r) { return r.id + ':' + r.recognizedHours; }).join(','));
+          return { requests: done };
+        });
+      },
+
+      unverify: function (p) {
+        var u = auth(p); need(u, 'admin');
+        return store.lock(function () {
+          var r = store.read('Requests').filter(function (x) { return x.id === p.id; })[0];
+          if (!r || r.status !== STATUS.VERIFIED) err('STATE');
+          ['actualIn', 'actualOut', 'actualHours', 'verifyResult', 'recognizedHours', 'rate', 'pay', 'verifyNote', 'verifiedAt', 'verifiedBy'].forEach(function (k) { r[k] = ''; });
+          r.status = STATUS.APPROVED;
+          store.upsert('Requests', 'id', r);
+          log(u, 'unverify', r.id);
+          return { request: r };
+        });
+      },
+
+      issueDoc: function (p) {
+        var u = auth(p); need(u, 'admin');
+        return store.lock(function () {
+          var all = store.read('Requests'), now = store.nowET();
+          var sel = all.filter(function (r) { return (p.ids || []).indexOf(r.id) >= 0; });
+          if (!sel.length) err('EMPTY', 'Nothing selected');
+          sel.forEach(function (r) {
+            if (r.status !== STATUS.VERIFIED) err('STATE', r.id + ' is not verified');
+            if (String(r.date).slice(0, 7) !== p.month) err('MONTH', r.id);
+          });
+          var docs = store.read('Docs');
+          var prefix = 'OT-' + p.month.replace('-', '') + '-';
+          var n = docs.filter(function (d) { return String(d.id).indexOf(prefix) === 0; }).length + 1;
+          var doc = {
+            id: prefix + ('0' + n).slice(-2), month: p.month, createdAt: now, createdBy: u.nameEn || u.name,
+            requestIds: sel.map(function (r) { return r.id; }).join(','),
+            totalHours: String(round2(sel.reduce(function (a, r) { return a + Number(r.recognizedHours || 0); }, 0))),
+            totalPay: String(round2(sel.reduce(function (a, r) { return a + Number(r.pay || 0); }, 0))),
+            status: 'ISSUED', note: String(p.note || '')
+          };
+          store.append('Docs', doc);
+          sel.forEach(function (r) { r.status = STATUS.CPA; r.docId = doc.id; store.upsert('Requests', 'id', r); });
+          log(u, 'issueDoc', doc.id, doc.requestIds);
+          return { doc: doc };
+        });
+      },
+
+      voidDoc: function (p) {
+        var u = auth(p); need(u, 'admin');
+        return store.lock(function () {
+          var d = store.read('Docs').filter(function (x) { return x.id === p.id; })[0];
+          if (!d || d.status === 'VOID') err('STATE');
+          d.status = 'VOID'; d.note = (d.note ? d.note + ' / ' : '') + 'Voided ' + store.nowET() + ' by ' + (u.nameEn || u.name);
+          store.upsert('Docs', 'id', d);
+          store.read('Requests').forEach(function (r) { if (r.docId === d.id) { r.status = STATUS.VERIFIED; r.docId = ''; store.upsert('Requests', 'id', r); } });
+          log(u, 'voidDoc', d.id);
+          return { doc: d };
+        });
+      },
+
+      saveEmployee: function (p) {
+        var u = auth(p); need(u, 'admin');
+        var e = p.emp || {};
+        return store.lock(function () {
+          var list = employees();
+          var cur = e.id ? list.filter(function (x) { return x.id === e.id; })[0] : null;
+          if (!cur) {
+            if (!e.id) { var max = 0; list.forEach(function (x) { var m = /^E(\d+)$/.exec(x.id); if (m) max = Math.max(max, Number(m[1])); }); e.id = 'E' + ('00' + (max + 1)).slice(-3); }
+            cur = { id: e.id, pin: '0000', active: 'TRUE' };
+          }
+          ['name', 'nameEn', 'timeClockName', 'email', 'dept', 'rate', 'roles', 'active', 'schedStart', 'schedEnd'].forEach(function (k) { if (e[k] !== undefined) cur[k] = String(e[k]); });
+          if (e.pin) cur.pin = String(e.pin);
+          if (cur.id === u.id && !has(cur, 'admin')) err('SELFADMIN', 'You cannot remove your own admin role');
+          store.upsert('Employees', 'id', cur);
+          log(u, 'saveEmployee', cur.id);
+          return { emp: publicEmp(cur, true) };
+        });
+      },
+
+      saveSettings: function (p) {
+        var u = auth(p); need(u, 'admin');
+        var s = settings();
+        Object.keys(p.settings || {}).forEach(function (k) { if (k in DEFAULT_SETTINGS) s[k] = String(p.settings[k]); });
+        store.replaceAll('Settings', Object.keys(s).map(function (k) { return { key: k, value: s[k] }; }));
+        log(u, 'saveSettings');
+        return { settings: s };
+      },
+
+      saveHolidays: function (p) {
+        var u = auth(p); need(u, 'admin');
+        var list = (p.holidays || []).filter(function (h) { return /^\d{4}-\d{2}-\d{2}$/.test(h.date); })
+          .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+        store.replaceAll('Holidays', list);
+        log(u, 'saveHolidays', '', String(list.length));
+        return { holidays: list };
+      },
+
+      changePin: function (p) {
+        var u = auth(p);
+        if (String(u.pin) !== String(p.oldPin)) err('PIN', 'Current PIN is incorrect');
+        if (!/^\d{4,8}$/.test(String(p.newPin))) err('PIN', 'PIN must be 4–8 digits');
+        u.pin = String(p.newPin);
+        store.upsert('Employees', 'id', u);
+        log(u, 'changePin');
+        return { ok: true };
+      },
+
+      timelog: function (p) {
+        var u = auth(p); need(u, 'admin');
+        var by = punchesFor(p.from, p.to);
+        return { punches: by };
+      }
+    };
+
+    function handle(action, payload) {
+      try {
+        if (!handlers[action]) err('ACTION', 'Unknown action: ' + action);
+        return { ok: true, data: handlers[action](payload || {}) };
+      } catch (e) {
+        return { ok: false, code: e.code || 'ERROR', error: String(e.message || e) };
+      }
+    }
+    return { handle: handle };
+  }
+
+  return {
+    VERSION: VERSION, STATUS: STATUS, COLUMNS: COLUMNS, DEFAULT_SETTINGS: DEFAULT_SETTINGS,
+    create: create, calcHours: calcHours, toMin: toMin, addDays: addDays, weekday: weekday, pad: pad,
+    isPremiumDay: isPremiumDay, multiplierFor: multiplierFor, federalHolidays: federalHolidays,
+    matchPunches: matchPunches, unapprovedExtra: unapprovedExtra, round2: round2, windowOf: windowOf, isTrue: isTrue
+  };
+})();
+if (typeof module !== 'undefined') module.exports = OTCore;
+
+</script>
+<script>
+/* ============================================================
+ * Demo store — browser localStorage (falls back to memory).
+ * Includes virtual clock + simulated Time Clock punches.
+ * ============================================================ */
+var LocalStore = (function () {
+  'use strict';
+  var KEY = 'jnfam-ot-demo-v1';
+
+  function etString(ms) {
+    var f = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+    });
+    var o = {};
+    f.formatToParts(new Date(ms)).forEach(function (p) { o[p.type] = p.value; });
+    return o.year + '-' + o.month + '-' + o.day + 'T' + o.hour + ':' + o.minute + ':' + o.second;
+  }
+  function hash(str) {
+    var h = 2166136261;
+    for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return (h >>> 0);
+  }
+  function hhmmss(min) {
+    min = Math.max(0, min);
+    var h = Math.floor(min / 60), m = Math.floor(min % 60), s = Math.floor((min * 60) % 60);
+    return h + ':' + (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  function create(opts) {
+    opts = opts || {};
+    var mem = null;
+    function load() {
+      if (mem) return mem;
+      try { var raw = (typeof localStorage !== 'undefined') && localStorage.getItem(KEY); mem = raw ? JSON.parse(raw) : null; } catch (e) { mem = null; }
+      if (!mem) mem = { tables: {}, sessions: {}, clockOffset: 0, importedTimelog: null, outbox: [] };
+      return mem;
+    }
+    function save() {
+      try { if (typeof localStorage !== 'undefined') localStorage.setItem(KEY, JSON.stringify(mem)); } catch (e) { }
+    }
+    function tbl(name) { var d = load(); return d.tables[name] || (d.tables[name] = []); }
+    function clone(o) { return JSON.parse(JSON.stringify(o)); }
+
+    var store = {
+      read: function (name) { return clone(tbl(name)); },
+      append: function (name, row) { tbl(name).push(clone(row)); save(); },
+      upsert: function (name, key, row) {
+        var t = tbl(name), i;
+        for (i = 0; i < t.length; i++) if (t[i][key] === row[key]) { t[i] = clone(row); save(); return; }
+        t.push(clone(row)); save();
+      },
+      replaceAll: function (name, rows) { load().tables[name] = clone(rows); save(); },
+      sessionSet: function (token, id) { load().sessions[token] = id; save(); },
+      sessionGet: function (token) { return load().sessions[token] || null; },
+      uuid: function () {
+        if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) { var r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); });
+      },
+      nowET: function () { return etString(Date.now() + (load().clockOffset || 0)); },
+      lock: function (fn) { return fn(); },
+      sendMail: function (to, subject, html, cc) {
+        load().outbox.unshift({ at: store.nowET(), to: to, cc: cc || '', subject: subject, html: html });
+        load().outbox = load().outbox.slice(0, 50); save();
+      },
+      timelog: function (from, to) {
+        var d = load();
+        if (d.importedTimelog && d.importedTimelog.length) {
+          return d.importedTimelog.filter(function (p) { return p.date >= from && p.date <= to; });
+        }
+        return simulate(from, to);
+      },
+
+      /* ---- demo-only helpers ---- */
+      demo: {
+        getOffset: function () { return load().clockOffset || 0; },
+        setNow: function (etLocal) { // 'YYYY-MM-DDTHH:MM' ET wall clock
+          var cur = store.nowET();
+          var curMs = Date.parse(cur.slice(0, 16) + ':00Z'), wantMs = Date.parse(etLocal.slice(0, 16) + ':00Z');
+          load().clockOffset = (load().clockOffset || 0) + (wantMs - curMs); save();
+        },
+        resetClock: function () { load().clockOffset = 0; save(); },
+        outbox: function () { return clone(load().outbox); },
+        importCsv: function (text) {
+          var rows = parseCsv(text);
+          if (!rows.length) throw new Error('Empty CSV');
+          var h = rows[0].map(function (x) { return String(x); });
+          function col(re) { for (var i = 0; i < h.length; i++) if (re.test(h[i])) return i; return -1; }
+          var cd = col(/date/i), cn = col(/name/i), ct = col(/type/i), cti = col(/\(time\)|시각/i);
+          if (cd < 0 || cn < 0 || ct < 0 || cti < 0) throw new Error('Header not recognised (Date/Name/Type/Time)');
+          var out = rows.slice(1).filter(function (r) { return r[cd]; }).map(function (r) {
+            return { date: String(r[cd]).slice(0, 10), name: r[cn], type: String(r[ct]).toUpperCase(), time: r[cti] };
+          });
+          load().importedTimelog = out; save();
+          return out.length;
+        },
+        clearImport: function () { load().importedTimelog = null; save(); },
+        hasImport: function () { var d = load(); return d.importedTimelog ? d.importedTimelog.length : 0; },
+        resetAll: function () { mem = { tables: {}, sessions: {}, clockOffset: 0, importedTimelog: null, outbox: [] }; save(); }
+      }
+    };
+
+    /** Deterministic fake punches for seeded staff; honours approved OT so verification has realistic data. */
+    function simulate(from, to) {
+      var emps = tbl('Employees').filter(function (e) { return e.timeClockName; });
+      var reqs = tbl('Requests');
+      var now = store.nowET();
+      var today = now.slice(0, 10), nowMin = OTCore.toMin(now.slice(11, 19));
+      var out = [];
+      for (var date = from; date <= to; date = OTCore.addDays(date, 1)) {
+        if (date > today) break;
+        var wd = OTCore.weekday(date);
+        emps.forEach(function (e) {
+          var h = hash(e.id + date);
+          var ss = OTCore.toMin(e.schedStart || '09:00'), se = OTCore.toMin(e.schedEnd || '17:00');
+          var inM, outM;
+          var rs = reqs.filter(function (r) { return r.empId === e.id && r.date === date && ['APPROVED', 'VERIFIED', 'CPA'].indexOf(r.status) >= 0; });
+          if (wd === 0) { if (!rs.length) return; }
+          if (wd === 6 && !rs.length) { if (h % 5 !== 0) return; inM = 9 * 60 - (h % 12); outM = 14 * 60 + (h % 50); }
+          else if (wd === 0 || wd === 6) { inM = OTCore.toMin(rs[0].start) - (h % 15); outM = OTCore.toMin(rs[0].end) + (h % 20); }
+          else {
+            inM = ss - (h % 26);
+            var k = h % 10;
+            outM = se + (k < 8 ? (h % 14) : k < 9 ? 50 + (h % 70) : 120 + (h % 60));
+          }
+          rs.forEach(function (r) {
+            var w = OTCore.windowOf(r);
+            var short = (hash(r.id) % 4 === 0) ? 45 + (hash(r.id) % 40) : 0; // ~25% leave early
+            inM = Math.min(inM, w.s - (wd === 0 || wd === 6 ? (h % 10) : 0));
+            outM = Math.max(outM, w.e - short + (short ? 0 : (h % 9)));
+          });
+          out.push({ date: date, name: e.timeClockName, type: 'IN', time: hhmmss(inM + (h % 60) / 60) });
+          if (date === today && outM > nowMin) return;
+          if (h % 37 === 0 && !rs.length) return; // occasional missing OUT
+          var od = date, om = outM;
+          if (om >= 1440) { od = OTCore.addDays(date, 1); om -= 1440; }
+          out.push({ date: od, name: e.timeClockName, type: 'OUT', time: hhmmss(om + ((h >> 3) % 60) / 60) });
+        });
+      }
+      return out;
+    }
+    return store;
+  }
+
+  function parseCsv(text) {
+    var rows = [], row = [], f = '', q = false;
+    for (var i = 0; i < text.length; i++) {
+      var c = text[i];
+      if (q) {
+        if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; }
+        else f += c;
+      } else if (c === '"') q = true;
+      else if (c === ',' || c === '\t') { row.push(f); f = ''; }
+      else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(f); rows.push(row); row = []; f = ''; }
+      else f += c;
+    }
+    if (f || row.length) { row.push(f); rows.push(row); }
+    return rows.filter(function (r) { return r.some(function (x) { return String(x).trim(); }); });
+  }
+
+  return { create: create, etString: etString };
+})();
+if (typeof module !== 'undefined') module.exports = LocalStore;
+
+</script>
+<script>
+/* ============================================================
+ * JNFAM Overtime — frontend
+ * ============================================================ */
+(function () {
+  'use strict';
+  var C = OTCore;
+  var API_URL = (window.OT_CONFIG && window.OT_CONFIG.API_URL) || '';
+  var DEMO = !API_URL;
+  var demoStore = DEMO ? LocalStore.create() : null;
+  var demoCore = DEMO ? C.create(demoStore) : null;
+
+  /* ---------------- i18n ---------------- */
+  var T = {
+    ko: {
+      appSub: '오버타임 사전 승인', login: '로그인', emp: '직원', pin: 'PIN', loginBtn: '로그인', logout: '로그아웃',
+      changePin: 'PIN 변경', demoBanner: '데모 모드 — 이 브라우저에만 저장됩니다. 가상 시계·샘플 출퇴근 기록으로 테스트하세요.',
+      tNew: '신청서 작성', tMine: '내 신청', tApprove: '승인', tVerify: '근태 검증', tCpa: 'CPA 요청서', tAdmin: '관리', tDemo: '데모 도구',
+      polH: '사전 승인이 완료된 오버타임만 인정됩니다',
+      pol1: '오버타임은 시작 전에 신청하고, 시작 시각 전까지 승인이 완료되어야 합니다.',
+      pol2: '시작 시각까지 승인되지 않은 신청은 자동 만료되며, 사후 승인은 불가합니다.',
+      pol3: '사전 승인 없이 수행한 추가 근무는 출퇴근 기록과 관계없이 수당 지급 대상이 아닙니다.',
+      pol4: '인정 시간은 승인 시간을 초과할 수 없으며, 출퇴근 기록(Time Clock)으로 검증 후 확정됩니다.',
+      ackText: '위 사전 승인 원칙을 확인했으며, 승인되지 않은 오버타임은 인정되지 않음에 동의합니다.',
+      empName: '직원명', empId: '사번', dept: '부서', rate: '시급 ($/hr)', multWk: '배율 (평일)', multHol: '배율 (토/휴일)',
+      date: '날짜', day: '요일', otType: '작업 구분', start: '시작', end: '종료', brk: '휴게(분)', hours: 'OT 시간', satHol: '토/휴일',
+      mult: '배율', estPay: '예상 수당($)', desc: '작업 내용 / 사유', addLine: '+ 행 추가', total: '합계', submit: '승인 요청',
+      submitted: '신청되었습니다. 승인자에게 알림이 발송됩니다.', needAck: '사전 승인 원칙 확인란에 체크해 주세요.',
+      pastErr: '이미 시작된 시간은 신청할 수 없습니다 (사전 승인 원칙)', overlapErr: '같은 날짜에 겹치는 신청이 있습니다',
+      descErr: '작업 내용을 입력하세요', month: '월', all: '전체', status: '상태', approvedBy: '승인자', approvedAt: '승인 시각',
+      cancel: '취소', cancelled: '취소되었습니다', noData: '내역이 없습니다', recognized: '인정 시간', pay: '수당($)',
+      approve: '승인', reject: '반려', rejectReason: '반려 사유 (필수)', comment: '의견 (선택)', untilStart: '시작까지', startedAgo: '시작 경과',
+      pendingList: '승인 대기', recent: '최근 처리 내역', approvedOk: '승인했습니다', rejectedOk: '반려했습니다',
+      expiredErr: '시작 시각이 지나 사전 승인할 수 없습니다. 자동 만료 처리되었습니다.', selfErr: '본인 신청은 승인할 수 없습니다',
+      submittedAt: '신청 시각', applicant: '신청자',
+      runVerify: 'Time Clock 대조 실행', timeClock: 'Time Clock 기록', overlap: '대조 시간', suggestion: '판정', decision: '인정 기준',
+      chClock: 'Time Clock 기준', chFull: '승인 시간 전부', chZero: '불인정 (0)', chManual: '직접 입력', note: '비고',
+      confirmSel: '선택 항목 확정', confirmed: '확정되었습니다', undo: '되돌리기', verifyHelp: '승인된 오버타임을 출퇴근 기록과 대조합니다. 판정을 확인하고 인정 기준을 선택한 뒤 확정하세요. 인정 시간은 승인 시간을 초과할 수 없습니다.',
+      unapprovedH: '사전 승인 없는 추가 근무 (불인정 — 참고용)', unapprovedHelp: '출퇴근 기록상 소정 근무시간 외 근무가 있으나 승인된 신청이 없는 시간입니다. 수당 대상이 아닙니다.',
+      extraH: '초과 시간', offDay: '휴무일', hasReq: '다른 신청 있음', punches: '펀치', noteReq: '직접 조정 시 비고를 입력하세요',
+      futureErr: '아직 종료되지 않은 오버타임은 검증할 수 없습니다', loadedPunches: '출퇴근 기록 {n}건 불러옴',
+      issue: '요청서 발행', issued: '요청서가 발행되었습니다', docHistory: '발행 이력', view: '보기', print: '인쇄 / PDF', csv: 'CSV 내보내기', void: '무효 처리',
+      voided: '무효 처리되었습니다', docNo: '문서번호', cpaHelp: '검증이 확정된 오버타임만 요청서에 포함할 수 있습니다. 발행하면 해당 항목은 잠깁니다.',
+      verifiedReady: '발행 가능 (검증 완료)', docLang: '요청서 언어', back: '← 목록',
+      employees: '직원 관리', holidays: '회사 휴일 (1.5배 적용)', settings: '설정', save: '저장', saved: '저장되었습니다', addEmp: '+ 직원 추가',
+      tcName: 'Time Clock 이름', email: '이메일', roles: '권한', active: '활성', sched: '근무시간', edit: '수정', newPin: '새 PIN (변경 시만)',
+      roleEmployee: '신청자', roleApprover: '승인자', roleAdmin: '관리자', addHol: '+ 휴일 추가', loadFed: '연방 공휴일 불러오기',
+      holName: '휴일명', del: '삭제', curPin: '현재 PIN', pinChanged: 'PIN이 변경되었습니다',
+      sCompany: '회사명', sAddress: '주소', sPhone: '전화', sWk: '평일 배율', sPrem: '토/휴일 배율', sSat: '토요일 할증', sSun: '일요일 할증',
+      sGrace: '검증 허용 오차(분)', sReview: '미승인 근무 표시 기준(분)', sCpaName: 'CPA 이름/사무소', sCpaEmail: 'CPA 이메일', sAdminEmail: '관리자 알림 이메일',
+      sCc: '참조(CC) 이메일', sUrl: '앱 주소(메일 링크)', sTypes: '작업 구분 목록 (한 줄에 하나, "한글|English")', sTcId: 'Time Clock 시트 ID', sTcName: 'Time Clock 탭 이름',
+      demoClock: '가상 현재 시각 (ET)', setClock: '시각 적용', resetClock: '실제 시각으로', outbox: '발송된 메일 (데모)', importCsv: 'Time Clock CSV 가져오기',
+      importHelp: 'Google Sheet의 TimeLog 탭을 CSV로 내려받아 붙여넣으면 실제 기록으로 대조할 수 있습니다. 비워두면 샘플 기록을 사용합니다.',
+      importBtn: '가져오기', clearImport: '샘플로 되돌리기', resetAll: '데모 데이터 초기화', scenario: '예시 시나리오 생성',
+      scenarioHelp: '지난달·이번 달에 사전 승인된 신청 여러 건을 만들어 검증/요청서 기능을 바로 시험할 수 있게 합니다.',
+      confirmReset: '초기화하려면 한 번 더 누르세요', yes: '예', no: '아니오', close: '닫기',
+      st: { PENDING: '승인 대기', APPROVED: '승인됨', REJECTED: '반려', CANCELLED: '취소', EXPIRED: '만료(불인정)', VERIFIED: '검증 완료', CPA: 'CPA 제출' },
+      vr: { OK: '일치', PARTIAL: '부분', NO_RECORD: '기록 없음', NO_OVERLAP: '시간 불일치', CHECK: '확인 필요', MANUAL: '수동 조정' },
+      an: { MISSING_OUT: '퇴근 기록 누락', DOUBLE_IN: '출근 중복', OUT_WITHOUT_IN: '출근 기록 누락' },
+      days: ['일', '월', '화', '수', '목', '금', '토'],
+      // CPA document
+      dTitle: '추가 근무(오버타임) 수당 지급 요청서', dSub: 'Overtime Payment Request — 사전 승인 및 근태 검증 완료분',
+      dTo: '수신', dFrom: '발신', dPeriod: '급여 대상 월', dIssue: '발행일', dPrep: '작성자', dNo: '문서번호',
+      dPol: '<b>사전 승인 원칙.</b> 본 요청서에는 오버타임 시작 시각 이전에 승인이 완료된 건만 포함되어 있습니다. 사전 승인 없이 수행된 추가 근무는 출퇴근 기록과 관계없이 인정되지 않으며 본 요청에서 제외되었습니다. 각 건의 인정 시간은 승인된 시간을 초과하지 않으며, 회사 출퇴근 기록(Time Clock)과 대조하여 확정되었습니다.',
+      dReq: '아래 직원의 {m} 추가 근무 수당을 해당 급여에 반영하여 주시기 바랍니다.',
+      dSum: '1. 직원별 요약', dDet: '2. 상세 내역', dEmp: '직원', dWkH: '평일 시간', dPrH: '토/휴일 시간', dTotH: '인정 시간 합계', dAmt: '금액($)',
+      dAppr: '승인 시간', dApprAt: '사전 승인', dTc: '출퇴근 기록', dRec: '인정', dNotes: '산정 기준',
+      dN1: '수당 = 인정 시간 × 시급 × 배율 (평일 {wk}배, 토요일·회사 휴일 {pr}배).',
+      dN2: '인정 시간 = min(승인 시간, 출퇴근 기록상 승인 시간대 내 근무 − 휴게). 허용 오차 {g}분.',
+      dN3: '시급은 검증 확정 시점의 직원 마스터 기준입니다.',
+      dSigPrep: '작성 (HR/Payroll)', dSigAppr: '승인 (Manager)', dSigName: '성명 / 서명 / 날짜',
+      dFoot: 'JNFAM OT 시스템에서 생성됨', dVoid: '무효 (VOID)'
+    },
+    en: {
+      appSub: 'Overtime Pre-Approval', login: 'Sign in', emp: 'Employee', pin: 'PIN', loginBtn: 'Sign in', logout: 'Sign out',
+      changePin: 'Change PIN', demoBanner: 'Demo mode — data is stored in this browser only. Use the virtual clock and sample time-clock data to test.',
+      tNew: 'New Request', tMine: 'My Requests', tApprove: 'Approvals', tVerify: 'Time Clock Check', tCpa: 'CPA Request', tAdmin: 'Admin', tDemo: 'Demo Tools',
+      polH: 'Only pre-approved overtime is recognized',
+      pol1: 'Submit overtime before it starts; approval must be completed before the start time.',
+      pol2: 'Requests not approved by the start time expire automatically. Retroactive approval is not possible.',
+      pol3: 'Extra work performed without pre-approval is not paid as overtime, regardless of time-clock records.',
+      pol4: 'Recognized hours cannot exceed approved hours and are confirmed against the Time Clock.',
+      ackText: 'I have read the pre-approval policy and agree that overtime without prior approval will not be recognized.',
+      empName: 'Employee Name', empId: 'Employee ID', dept: 'Department', rate: 'Base Rate ($/hr)', multWk: 'Multiplier (Weekday)', multHol: 'Multiplier (Sat/Holiday)',
+      date: 'Date', day: 'Day', otType: 'OT Type (Task)', start: 'Start', end: 'End', brk: 'Break (min)', hours: 'OT Hours', satHol: 'Sat/Hol',
+      mult: 'Mult.', estPay: 'Est. Pay ($)', desc: 'Description / Reason', addLine: '+ Add line', total: 'TOTAL', submit: 'Request approval',
+      submitted: 'Submitted. Approvers have been notified.', needAck: 'Please acknowledge the pre-approval policy.',
+      pastErr: 'You cannot request time that has already started (pre-approval policy)', overlapErr: 'Overlaps another request on the same date',
+      descErr: 'Description is required', month: 'Month', all: 'All', status: 'Status', approvedBy: 'Approver', approvedAt: 'Approved at',
+      cancel: 'Cancel', cancelled: 'Cancelled', noData: 'No records', recognized: 'Recognized', pay: 'Pay ($)',
+      approve: 'Approve', reject: 'Reject', rejectReason: 'Reason for rejection (required)', comment: 'Comment (optional)', untilStart: 'Starts in', startedAgo: 'Started',
+      pendingList: 'Pending approval', recent: 'Recent decisions', approvedOk: 'Approved', rejectedOk: 'Rejected',
+      expiredErr: 'Start time has passed — cannot pre-approve. The request has been expired.', selfErr: 'You cannot approve your own request',
+      submittedAt: 'Submitted', applicant: 'Employee',
+      runVerify: 'Run Time Clock check', timeClock: 'Time Clock', overlap: 'Matched', suggestion: 'Result', decision: 'Basis',
+      chClock: 'Time Clock', chFull: 'Full approved', chZero: 'Not recognized (0)', chManual: 'Manual', note: 'Note',
+      confirmSel: 'Confirm selected', confirmed: 'Confirmed', undo: 'Undo', verifyHelp: 'Approved overtime is matched against the Time Clock. Review the result, choose the basis, then confirm. Recognized hours cannot exceed approved hours.',
+      unapprovedH: 'Extra time without pre-approval (not recognized — for reference)', unapprovedHelp: 'Time Clock shows work outside the scheduled hours with no approved request. This time is not paid as overtime.',
+      extraH: 'Extra hrs', offDay: 'Day off', hasReq: 'Has other request', punches: 'Punches', noteReq: 'A note is required for manual adjustments',
+      futureErr: 'Overtime that has not ended yet cannot be verified', loadedPunches: '{n} punches loaded',
+      issue: 'Issue request', issued: 'Request issued', docHistory: 'Issued documents', view: 'View', print: 'Print / PDF', csv: 'Export CSV', void: 'Void',
+      voided: 'Voided', docNo: 'Doc No.', cpaHelp: 'Only verified overtime can be included. Issued items are locked.',
+      verifiedReady: 'Ready to issue (verified)', docLang: 'Document language', back: '← Back',
+      employees: 'Employees', holidays: 'Company holidays (premium rate)', settings: 'Settings', save: 'Save', saved: 'Saved', addEmp: '+ Add employee',
+      tcName: 'Time Clock name', email: 'Email', roles: 'Roles', active: 'Active', sched: 'Schedule', edit: 'Edit', newPin: 'New PIN (only to change)',
+      roleEmployee: 'Requester', roleApprover: 'Approver', roleAdmin: 'Admin', addHol: '+ Add holiday', loadFed: 'Load federal holidays',
+      holName: 'Holiday', del: 'Delete', curPin: 'Current PIN', pinChanged: 'PIN changed',
+      sCompany: 'Company', sAddress: 'Address', sPhone: 'Phone', sWk: 'Weekday multiplier', sPrem: 'Sat/Holiday multiplier', sSat: 'Saturday premium', sSun: 'Sunday premium',
+      sGrace: 'Match tolerance (min)', sReview: 'Unapproved-time threshold (min)', sCpaName: 'CPA name / firm', sCpaEmail: 'CPA email', sAdminEmail: 'Admin notification email',
+      sCc: 'CC email', sUrl: 'App URL (for emails)', sTypes: 'OT types (one per line, "한글|English")', sTcId: 'Time Clock sheet ID', sTcName: 'Time Clock tab name',
+      demoClock: 'Virtual now (ET)', setClock: 'Apply', resetClock: 'Real time', outbox: 'Sent emails (demo)', importCsv: 'Import Time Clock CSV',
+      importHelp: 'Download the TimeLog tab as CSV and paste it here to check against real records. Leave empty to use sample data.',
+      importBtn: 'Import', clearImport: 'Back to sample', resetAll: 'Reset demo data', scenario: 'Create sample scenario',
+      scenarioHelp: 'Creates several pre-approved requests last month and this month so you can try verification and the CPA request right away.',
+      confirmReset: 'Click again to reset', yes: 'Yes', no: 'No', close: 'Close',
+      st: { PENDING: 'Pending', APPROVED: 'Approved', REJECTED: 'Rejected', CANCELLED: 'Cancelled', EXPIRED: 'Expired (not recognized)', VERIFIED: 'Verified', CPA: 'Sent to CPA' },
+      vr: { OK: 'Match', PARTIAL: 'Partial', NO_RECORD: 'No record', NO_OVERLAP: 'No overlap', CHECK: 'Check', MANUAL: 'Manual' },
+      an: { MISSING_OUT: 'Missing OUT', DOUBLE_IN: 'Double IN', OUT_WITHOUT_IN: 'OUT without IN' },
+      days: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+      dTitle: 'Overtime Payment Request', dSub: 'Pre-approved and time-clock verified overtime',
+      dTo: 'To', dFrom: 'From', dPeriod: 'Pay period (month)', dIssue: 'Issue date', dPrep: 'Prepared by', dNo: 'Doc No.',
+      dPol: '<b>Pre-approval policy.</b> This request includes only overtime that was approved before its start time. Extra work performed without prior approval is not recognized, regardless of time-clock records, and has been excluded. Recognized hours for each item do not exceed the approved hours and were confirmed against the company Time Clock.',
+      dReq: 'Please include the following overtime for {m} in the corresponding payroll.',
+      dSum: '1. Summary by employee', dDet: '2. Detail', dEmp: 'Employee', dWkH: 'Weekday hrs', dPrH: 'Sat/Hol hrs', dTotH: 'Recognized hrs', dAmt: 'Amount ($)',
+      dAppr: 'Approved', dApprAt: 'Pre-approved', dTc: 'Time Clock', dRec: 'Recog.', dNotes: 'Basis of calculation',
+      dN1: 'Pay = recognized hours × hourly rate × multiplier (weekday {wk}×, Saturday & company holidays {pr}×).',
+      dN2: 'Recognized hours = min(approved hours, time worked within the approved window per Time Clock − break). Tolerance {g} min.',
+      dN3: 'Hourly rates are from the employee master at the time of verification.',
+      dSigPrep: 'Prepared by (HR/Payroll)', dSigAppr: 'Approved by (Manager)', dSigName: 'Name / Signature / Date',
+      dFoot: 'Generated by the JNFAM OT system', dVoid: 'VOID'
+    }
+  };
+  var S = {
+    lang: lsGet('ot-lang') || 'ko', token: ssGet('ot-token') || '', tab: lsGet('ot-tab') || 'new',
+    data: null, clockDelta: 0, verify: null, verifyMonth: '', cpaMonth: '', mineMonth: '', docView: null, docLang: null, lines: null, ack: false
+  };
+  function t(k, vars) {
+    var v = T[S.lang][k]; if (v === undefined) v = T.ko[k]; if (v === undefined) v = k;
+    if (vars) Object.keys(vars).forEach(function (x) { v = String(v).replace('{' + x + '}', vars[x]); });
+    return v;
+  }
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { } }
+  function ssGet(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
+  function ssSet(k, v) { try { if (v) sessionStorage.setItem(k, v); else sessionStorage.removeItem(k); } catch (e) { } }
+
+  /* ---------------- api ---------------- */
+  var busyN = 0;
+  function busy(d) { busyN = Math.max(0, busyN + d); document.body.classList.toggle('busy', busyN > 0); }
+  function call(action, payload) {
+    busy(1);
+    return call0(action, payload).then(function (r) { busy(-1); return r; }, function (e) { busy(-1); throw e; });
+  }
+  function call0(action, payload) {
+    payload = payload || {};
+    if (S.token && !payload.token) payload.token = S.token;
+    if (DEMO) {
+      return new Promise(function (res, rej) {
+        var r = demoCore.handle(action, payload);
+        setTimeout(function () { r.ok ? res(r.data) : rej(mkErr(r)); }, 60);
+      });
+    }
+    return fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: action, payload: payload }) })
+      .then(function (r) { return r.json(); })
+      .then(function (r) { if (!r.ok) throw mkErr(r); return r.data; });
+  }
+  function mkErr(r) { var e = new Error(r.error || 'Error'); e.code = r.code; return e; }
+  function errMsg(e) {
+    var m = String(e.message || e);
+    if (e.code === 'PAST') return t('pastErr') + ' — ' + m.replace('PAST:', '');
+    if (e.code === 'OVERLAP') return t('overlapErr') + ' — ' + m.replace('OVERLAP:', '');
+    if (e.code === 'EXPIRED') return t('expiredErr');
+    if (e.code === 'SELF') return t('selfErr');
+    if (e.code === 'ACK') return t('needAck');
+    if (e.code === 'NOTE') return t('noteReq');
+    if (e.code === 'FUTURE') return t('futureErr');
+    if (e.code === 'AUTH') { logout(true); }
+    return m;
+  }
+
+  /* ---------------- utils ---------------- */
+  function $(sel, root) { return (root || document).querySelector(sel); }
+  function $$(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function n2(x) { return (Math.round((Number(x) || 0) * 100) / 100).toFixed(2); }
+  function money(x) { return (Number(x) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function toast(msg, isErr) {
+    var box = $('#toast'), el = document.createElement('div');
+    el.className = 'toast' + (isErr ? ' err' : ''); el.textContent = msg; box.appendChild(el);
+    setTimeout(function () { el.remove(); }, isErr ? 5200 : 2800);
+  }
+  function nowET() { // 'YYYY-MM-DDTHH:MM:SS'
+    var d = new Date(Date.now() + S.clockDelta);
+    return d.toISOString().slice(0, 19);
+  }
+  function syncClock(serverNow) { S.clockDelta = Date.parse(serverNow + 'Z') - Date.now(); }
+  function dayName(date) { return t('days')[C.weekday(date)]; }
+  function typeLabel(v) { var p = String(v || '').split('|'); return S.lang === 'en' ? (p[1] || p[0]) : p[0]; }
+  function otTypes() { return String(S.data.settings.otTypes || '').split(/\n/).map(function (x) { return x.trim(); }).filter(Boolean); }
+  function empName(e) { if (!e) return ''; return S.lang === 'en' ? (e.nameEn || e.name) : e.name; }
+  function empById(id) { return S.data.employees.filter(function (e) { return e.id === id; })[0]; }
+  function badge(st) { return '<span class="b ' + st + '">' + esc(t('st')[st] || st) + '</span>'; }
+  function vbadge(v) { return v ? '<span class="b ' + v + '">' + esc(t('vr')[v] || v) + '</span>' : ''; }
+  function has(role) { var r = S.data.roles || []; return r.indexOf(role) >= 0 || (role !== 'employee' && r.indexOf('admin') >= 0); }
+  function monthOf(d) { return String(d).slice(0, 7); }
+  function thisMonth() { return nowET().slice(0, 7); }
+  function prevMonth(m) { var d = new Date(m + '-15T12:00:00Z'); d.setUTCMonth(d.getUTCMonth() - 1); return d.toISOString().slice(0, 7); }
+  function minsUntil(date, time) { return (Date.parse(date + 'T' + time + ':00Z') - Date.parse(nowET() + 'Z')) / 60000; }
+  function fmtDur(m) { m = Math.abs(Math.round(m)); var d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60; return (d ? d + 'd ' : '') + (h ? h + 'h ' : '') + mm + 'm'; }
+  function fmtTs(ts) { return ts ? String(ts).replace('T', ' ').slice(0, 16) : ''; }
+
+  /* ---------------- shell ---------------- */
+  var root;
+  function boot() {
+    root = $('#app');
+    if (!S.token) return renderLogin();
+    load().catch(function (e) { toast(errMsg(e), true); renderLogin(); });
+  }
+  function load() {
+    return call('bootstrap').then(function (d) {
+      S.data = d; syncClock(d.nowET);
+      if (!S.lines) S.lines = [blankLine()];
+      render();
+    });
+  }
+  function logout(silent) {
+    S.token = ''; ssSet('ot-token', ''); S.data = null; S.verify = null; S.lines = null; S.docView = null;
+    if (!silent) renderLogin(); else setTimeout(renderLogin, 0);
+  }
+
+  function renderLogin() {
+    root.innerHTML = (DEMO ? '<div class="demo-bar">' + esc(t('demoBanner')) + '</div>' : '') +
+      '<div class="login"><div class="card"><div class="row" style="justify-content:space-between"><div><h1>JNFAM OT</h1><div class="sub">' + esc(t('appSub')) + '</div></div>' + langToggle() + '</div>' +
+      '<div class="field"><label>' + t('emp') + '</label><select id="lgEmp"><option value="">…</option></select></div>' +
+      '<div class="field"><label>' + t('pin') + '</label><input id="lgPin" type="password" inputmode="numeric" autocomplete="current-password"></div>' +
+      '<button class="btn pri" id="lgBtn" style="width:100%">' + t('loginBtn') + '</button>' +
+      (DEMO ? '<p class="small muted" style="margin:12px 0 0">Demo: admin / 1234 · staff / 0000</p>' : '') + '</div></div>';
+    bindLang();
+    call('loginList').then(function (d) {
+      $('#lgEmp').innerHTML = '<option value="">…</option>' + d.employees.map(function (e) {
+        return '<option value="' + esc(e.id) + '">' + esc(S.lang === 'en' ? (e.nameEn || e.name) : e.name) + ' (' + esc(e.id) + ')</option>';
+      }).join('');
+      var last = lsGet('ot-last'); if (last) $('#lgEmp').value = last;
+    }).catch(function (e) { toast(errMsg(e), true); });
+    function go() {
+      var id = $('#lgEmp').value, pin = $('#lgPin').value;
+      if (!id) return;
+      $('#lgBtn').disabled = true;
+      call('login', { empId: id, pin: pin }).then(function (d) {
+        S.token = d.token; ssSet('ot-token', d.token); lsSet('ot-last', id);
+        return load();
+      }).catch(function (e) { toast(errMsg(e), true); $('#lgBtn').disabled = false; });
+    }
+    $('#lgBtn').onclick = go;
+    $('#lgPin').onkeydown = function (e) { if (e.key === 'Enter') go(); };
+  }
+  function langToggle() {
+    return '<div class="lang"><button data-lang="ko" class="' + (S.lang === 'ko' ? 'on' : '') + '">한국어</button><button data-lang="en" class="' + (S.lang === 'en' ? 'on' : '') + '">EN</button></div>';
+  }
+  function bindLang() {
+    $$('[data-lang]').forEach(function (b) {
+      b.onclick = function () { S.lang = b.getAttribute('data-lang'); lsSet('ot-lang', S.lang); S.data ? render() : renderLogin(); };
+    });
+  }
+
+  function tabsFor() {
+    var tabs = [];
+    if (has('employee') || (S.data.roles || []).length === 0) tabs.push(['new', t('tNew')], ['mine', t('tMine')]);
+    if (has('approver')) {
+      var cnt = S.data.requests.filter(function (r) { return r.status === 'PENDING' && r.empId !== S.data.user.id; }).length;
+      tabs.push(['approve', t('tApprove') + (cnt ? '<span class="cnt">' + cnt + '</span>' : '')]);
+    }
+    if (has('admin')) tabs.push(['verify', t('tVerify')], ['cpa', t('tCpa')], ['admin', t('tAdmin')]);
+    if (DEMO) tabs.push(['demo', t('tDemo')]);
+    return tabs;
+  }
+
+  function render() {
+    var tabs = tabsFor();
+    if (!tabs.some(function (x) { return x[0] === S.tab; })) S.tab = tabs[0][0];
+    var u = S.data.user;
+    root.innerHTML = (DEMO ? '<div class="demo-bar">' + esc(t('demoBanner')) + '</div>' : '') +
+      '<div class="top"><div class="top-in"><div class="brand"><b>JNFAM OT</b><span class="hide-m">' + esc(t('appSub')) + '</span></div>' +
+      '<span class="clock' + (DEMO ? ' demo' : '') + '" id="clock"></span><span class="sp"></span>' + langToggle() +
+      '<span class="who">' + esc(empName(u)) + '</span><button class="btn sm ghost" id="btnPin">' + t('changePin') + '</button>' +
+      '<button class="btn sm" id="btnOut">' + t('logout') + '</button></div>' +
+      '<div class="tabs">' + tabs.map(function (x) { return '<button data-tab="' + x[0] + '" class="' + (S.tab === x[0] ? 'on' : '') + '">' + x[1] + '</button>'; }).join('') + '</div></div>' +
+      '<main id="main"></main>';
+    bindLang();
+    $('#btnOut').onclick = function () { logout(); };
+    $('#btnPin').onclick = pinModal;
+    $$('[data-tab]').forEach(function (b) { b.onclick = function () { S.tab = b.getAttribute('data-tab'); lsSet('ot-tab', S.tab); S.docView = null; render(); }; });
+    tick();
+    ({ new: viewNew, mine: viewMine, approve: viewApprove, verify: viewVerify, cpa: viewCpa, admin: viewAdmin, demo: viewDemo })[S.tab]($('#main'));
+  }
+  var tickTimer;
+  function tick() {
+    clearInterval(tickTimer);
+    function f() { var el = $('#clock'); if (el) el.textContent = 'ET ' + nowET().replace('T', ' ').slice(0, 16) + (DEMO ? ' · DEMO' : ''); }
+    f(); tickTimer = setInterval(f, 15000);
+  }
+
+  function modal(html, onMount) {
+    var bg = document.createElement('div'); bg.className = 'modal-bg';
+    bg.innerHTML = '<div class="modal">' + html + '</div>';
+    document.body.appendChild(bg);
+    bg.addEventListener('mousedown', function (e) { if (e.target === bg) bg.remove(); });
+    if (onMount) onMount(bg, function () { bg.remove(); });
+    return bg;
+  }
+  function pinModal() {
+    modal('<h3>' + t('changePin') + '</h3><div class="field"><label>' + t('curPin') + '</label><input id="pOld" type="password" inputmode="numeric"></div>' +
+      '<div class="field"><label>' + t('newPin').replace(/\s*\(.*\)/, '') + ' (4–8)</label><input id="pNew" type="password" inputmode="numeric"></div>' +
+      '<div class="acts"><button class="btn" data-x>' + t('close') + '</button><button class="btn pri" data-ok>' + t('save') + '</button></div>', function (m, close) {
+        $('[data-x]', m).onclick = close;
+        $('[data-ok]', m).onclick = function () {
+          call('changePin', { oldPin: $('#pOld', m).value, newPin: $('#pNew', m).value })
+            .then(function () { toast(t('pinChanged')); close(); }).catch(function (e) { toast(errMsg(e), true); });
+        };
+      });
+  }
+
+  /* ================= NEW REQUEST ================= */
+  function blankLine() { return { date: '', start: '17:00', end: '19:00', breakMin: 0, otType: '', description: '' }; }
+  function lineCalc(l) {
+    var s = S.data.settings, h = S.data.holidays;
+    var hours = (l.start && l.end) ? C.calcHours(l.start, l.end, l.breakMin) : 0;
+    var prem = l.date ? C.isPremiumDay(l.date, h, s) : false;
+    var mult = l.date ? C.multiplierFor(l.date, h, s) : 0;
+    var rate = Number(S.data.user.rate) || 0;
+    var past = l.date && l.start ? (l.date + 'T' + l.start) <= nowET().slice(0, 16) : false;
+    return { hours: hours, prem: prem, mult: mult, pay: hours * rate * mult, past: past };
+  }
+  function viewNew(el) {
+    var u = S.data.user, s = S.data.settings;
+    var types = otTypes();
+    el.innerHTML = '<h2>' + t('tNew') + '</h2>' + policyBox() +
+      '<div class="card"><div class="grid">' +
+      kv(t('empName'), esc(empName(u))) + kv(t('empId'), esc(u.id)) + kv(t('dept'), esc(u.dept || '—')) +
+      kv(t('rate'), '<span class="num">' + money(u.rate) + '</span>') + kv(t('multWk'), '<span class="num">' + s.weekdayMultiplier + '×</span>') + kv(t('multHol'), '<span class="num">' + s.premiumMultiplier + '×</span>') +
+      '</div></div>' +
+      '<div class="card"><div class="tw"><table class="t lines"><thead><tr><th>' + t('date') + '</th><th>' + t('day') + '</th><th>' + t('otType') + '</th><th>' + t('start') + '</th><th>' + t('end') + '</th><th>' + t('brk') + '</th><th class="n">' + t('hours') + '</th><th>' + t('satHol') + '</th><th class="n">' + t('mult') + '</th><th class="n">' + t('estPay') + '</th><th style="min-width:220px">' + t('desc') + '</th><th></th></tr></thead><tbody id="lnBody"></tbody>' +
+      '<tfoot><tr><td colspan="6" class="right">' + t('total') + '</td><td class="n" id="totH"></td><td></td><td></td><td class="n" id="totP"></td><td colspan="2"></td></tr></tfoot></table></div>' +
+      '<div class="row" style="margin-top:10px"><button class="btn sm" id="addLn">' + t('addLine') + '</button></div>' +
+      '<label class="ack"><input type="checkbox" id="ack"' + (S.ack ? ' checked' : '') + '><span>' + esc(t('ackText')) + '</span></label>' +
+      '<div class="row" style="justify-content:flex-end"><button class="btn pri" id="btnSubmit">' + t('submit') + '</button></div></div>';
+
+    function drawLines() {
+      var tb = $('#lnBody'); var minDate = nowET().slice(0, 10);
+      tb.innerHTML = S.lines.map(function (l, i) {
+        var c = lineCalc(l);
+        return '<tr data-i="' + i + '"' + (c.past ? ' style="background:#fdecea"' : '') + '>' +
+          '<td><input type="date" data-k="date" min="' + minDate + '" value="' + esc(l.date) + '" style="min-width:135px"></td>' +
+          '<td class="calc">' + (l.date ? dayName(l.date) : '') + '</td>' +
+          '<td><select data-k="otType" style="min-width:130px"><option value="">—</option>' + types.map(function (ty) { return '<option value="' + esc(ty) + '"' + (ty === l.otType ? ' selected' : '') + '>' + esc(typeLabel(ty)) + '</option>'; }).join('') + '</select></td>' +
+          '<td><input type="time" data-k="start" value="' + esc(l.start) + '" step="900" style="min-width:100px"></td>' +
+          '<td><input type="time" data-k="end" value="' + esc(l.end) + '" step="900" style="min-width:100px"></td>' +
+          '<td><input type="number" data-k="breakMin" min="0" step="5" value="' + esc(l.breakMin) + '" style="width:70px"></td>' +
+          '<td class="calc">' + n2(c.hours) + '</td><td>' + (l.date ? (c.prem ? '<span class="b Y">Yes</span>' : '<span class="muted">No</span>') : '') + '</td>' +
+          '<td class="calc">' + (l.date ? c.mult + '×' : '') + '</td><td class="calc">' + money(c.pay) + '</td>' +
+          '<td><input type="text" data-k="description" value="' + esc(l.description) + '"></td>' +
+          '<td>' + (S.lines.length > 1 ? '<button class="btn sm ghost" data-del="' + i + '">✕</button>' : '') + '</td></tr>' +
+          (c.past ? '<tr><td colspan="12" class="small" style="color:var(--red);background:#fdecea">' + esc(t('pastErr')) + '</td></tr>' : '');
+      }).join('');
+      var tot = S.lines.reduce(function (a, l) { var c = lineCalc(l); a.h += c.hours; a.p += c.pay; return a; }, { h: 0, p: 0 });
+      $('#totH').textContent = n2(tot.h); $('#totP').textContent = money(tot.p);
+      $$('[data-k]', tb).forEach(function (inp) {
+        inp.onchange = function () {
+          var i = Number(inp.closest('tr').getAttribute('data-i')), k = inp.getAttribute('data-k');
+          S.lines[i][k] = k === 'breakMin' ? Number(inp.value) || 0 : inp.value;
+          if (k !== 'description') drawLines();
+        };
+        if (inp.getAttribute('data-k') === 'description') inp.oninput = inp.onchange;
+      });
+      $$('[data-del]', tb).forEach(function (b) { b.onclick = function () { S.lines.splice(Number(b.getAttribute('data-del')), 1); drawLines(); }; });
+    }
+    drawLines();
+    $('#addLn').onclick = function () {
+      var last = S.lines[S.lines.length - 1] || blankLine();
+      S.lines.push({ date: last.date ? C.addDays(last.date, 1) : '', start: last.start, end: last.end, breakMin: last.breakMin, otType: last.otType, description: '' });
+      drawLines();
+    };
+    $('#ack').onchange = function () { S.ack = this.checked; };
+    $('#btnSubmit').onclick = function () {
+      if (!S.ack) return toast(t('needAck'), true);
+      var lines = S.lines.filter(function (l) { return l.date; });
+      if (!lines.length) return toast(t('date') + '?', true);
+      for (var i = 0; i < lines.length; i++) {
+        if (lineCalc(lines[i]).past) return toast(t('pastErr'), true);
+        if (!String(lines[i].description).trim()) return toast(t('descErr'), true);
+      }
+      var btn = this; btn.disabled = true;
+      call('submit', { lines: lines, ack: true }).then(function () {
+        toast(t('submitted')); S.lines = [blankLine()]; S.ack = false; S.tab = 'mine'; return load();
+      }).catch(function (e) { toast(errMsg(e), true); btn.disabled = false; });
+    };
+  }
+  function policyBox() {
+    return '<div class="policy"><b class="h">⚠ ' + esc(t('polH')) + '</b><ul><li>' + esc(t('pol1')) + '</li><li>' + esc(t('pol2')) + '</li><li>' + esc(t('pol3')) + '</li><li>' + esc(t('pol4')) + '</li></ul></div>';
+  }
+  function kv(l, v) { return '<div class="kv"><label>' + esc(l) + '</label><div>' + v + '</div></div>'; }
+
+  /* ================= MY REQUESTS ================= */
+  function viewMine(el) {
+    var me = S.data.user.id;
+    S.mineMonth = S.mineMonth || thisMonth();
+    var all = S.data.requests.filter(function (r) { return r.empId === me; });
+    var list = all.filter(function (r) { return !S.mineMonth || monthOf(r.date) === S.mineMonth; })
+      .sort(function (a, b) { return (b.date + b.start).localeCompare(a.date + a.start); });
+    var sum = list.reduce(function (a, r) {
+      if (r.status === 'PENDING') a.p += Number(r.hours);
+      if (r.status === 'APPROVED') a.a += Number(r.hours);
+      if (r.status === 'VERIFIED' || r.status === 'CPA') { a.v += Number(r.recognizedHours || 0); a.pay += Number(r.pay || 0); }
+      return a;
+    }, { p: 0, a: 0, v: 0, pay: 0 });
+    el.innerHTML = '<div class="row" style="justify-content:space-between"><h2>' + t('tMine') + '</h2>' + monthPicker('mmPick', S.mineMonth, true) + '</div>' +
+      '<div class="stats">' + stat(t('st').PENDING, n2(sum.p) + 'h') + stat(t('st').APPROVED, n2(sum.a) + 'h') + stat(t('recognized'), n2(sum.v) + 'h') + stat(t('pay'), '$' + money(sum.pay)) + '</div>' +
+      '<div class="tw">' + (list.length ? '<table class="t"><thead><tr><th>' + t('date') + '</th><th>' + t('day') + '</th><th>' + t('start') + '–' + t('end') + '</th><th class="n">' + t('hours') + '</th><th>' + t('otType') + '</th><th>' + t('desc') + '</th><th>' + t('status') + '</th><th>' + t('approvedBy') + '</th><th class="n">' + t('recognized') + '</th><th class="n">' + t('pay') + '</th><th></th></tr></thead><tbody>' +
+        list.map(function (r) {
+          var canCancel = r.status === 'PENDING' || (r.status === 'APPROVED' && minsUntil(r.date, r.start) > 0);
+          return '<tr><td class="mono">' + r.date + '</td><td>' + dayName(r.date) + (r.premium === 'Y' ? ' <span class="b Y">' + r.multiplier + '×</span>' : '') + '</td><td class="mono">' + r.start + '–' + r.end + (Number(r.breakMin) ? ' <span class="muted small">(-' + r.breakMin + 'm)</span>' : '') + '</td><td class="n">' + n2(r.hours) + '</td>' +
+            '<td>' + esc(typeLabel(r.otType)) + '</td><td>' + esc(r.description) + '</td><td>' + badge(r.status) + (r.decisionComment ? '<div class="small muted">' + esc(r.decisionComment) + '</div>' : '') + '</td>' +
+            '<td class="small">' + esc(r.decidedByName || '') + (r.decidedAt ? '<div class="muted mono">' + fmtTs(r.decidedAt) + '</div>' : '') + '</td>' +
+            '<td class="n">' + (r.recognizedHours !== '' && r.recognizedHours != null && (r.status === 'VERIFIED' || r.status === 'CPA') ? n2(r.recognizedHours) : '') + '</td>' +
+            '<td class="n">' + (r.pay ? money(r.pay) : '') + '</td>' +
+            '<td>' + (canCancel ? '<button class="btn sm no" data-cancel="' + r.id + '">' + t('cancel') + '</button>' : '') + '</td></tr>';
+        }).join('') + '</tbody></table>' : '<div class="empty">' + t('noData') + '</div>') + '</div>';
+    bindMonth('mmPick', function (v) { S.mineMonth = v; render(); });
+    $$('[data-cancel]', el).forEach(function (b) {
+      b.onclick = function () {
+        if (b.getAttribute('data-armed') !== '1') { b.setAttribute('data-armed', '1'); b.textContent = t('cancel') + '?'; return; }
+        call('cancel', { id: b.getAttribute('data-cancel') }).then(function () { toast(t('cancelled')); return load(); }).catch(function (e) { toast(errMsg(e), true); });
+      };
+    });
+  }
+  function stat(l, v) { return '<div class="stat"><div class="l">' + esc(l) + '</div><div class="v">' + esc(v) + '</div></div>'; }
+  function monthPicker(id, val, withAll) {
+    return '<div class="row"><input type="month" id="' + id + '" value="' + esc(val || '') + '" style="width:160px">' + (withAll ? '<button class="btn sm" data-all="' + id + '">' + t('all') + '</button>' : '') + '</div>';
+  }
+  function bindMonth(id, fn) {
+    var el = $('#' + id); if (el) el.onchange = function () { fn(el.value); };
+    var a = $('[data-all="' + id + '"]'); if (a) a.onclick = function () { fn(''); };
+  }
+
+  /* ================= APPROVALS ================= */
+  function viewApprove(el) {
+    var me = S.data.user.id;
+    var pend = S.data.requests.filter(function (r) { return r.status === 'PENDING'; })
+      .sort(function (a, b) { return (a.date + a.start).localeCompare(b.date + b.start); });
+    var recent = S.data.requests.filter(function (r) { return r.decidedAt || r.status === 'EXPIRED'; })
+      .sort(function (a, b) { return String(b.decidedAt || b.submittedAt).localeCompare(String(a.decidedAt || a.submittedAt)); }).slice(0, 40);
+    el.innerHTML = '<h2>' + t('pendingList') + ' (' + pend.length + ')</h2>' + policyBox() +
+      (pend.length ? pend.map(function (r) {
+        var e = empById(r.empId), mins = minsUntil(r.date, r.start), self = r.empId === me;
+        return '<div class="pending-card" data-id="' + r.id + '"><div class="row" style="justify-content:space-between"><div>' +
+          '<div class="when">' + r.date + ' (' + dayName(r.date) + ') ' + r.start + '–' + r.end + ' · ' + n2(r.hours) + 'h' + (r.premium === 'Y' ? ' <span class="b Y">' + r.multiplier + '×</span>' : '') + '</div>' +
+          '<div><b>' + esc(empName(e) || r.empName) + '</b> · ' + esc(typeLabel(r.otType)) + ' · <span class="muted">' + t('submittedAt') + ' ' + fmtTs(r.submittedAt) + '</span></div>' +
+          '<div style="margin-top:4px">' + esc(r.description) + '</div></div>' +
+          '<div class="right"><div class="countdown ' + (mins < 120 ? 'soon' : 'ok') + '">' + (mins > 0 ? t('untilStart') + ' ' + fmtDur(mins) : t('startedAgo') + ' ' + fmtDur(mins)) + '</div></div></div>' +
+          (self ? '<div class="small muted" style="margin-top:8px">' + t('selfErr') + '</div>' :
+            '<div class="row" style="margin-top:10px"><input type="text" data-cmt placeholder="' + esc(t('comment')) + ' / ' + esc(t('rejectReason')) + '" style="flex:1;min-width:200px">' +
+            '<button class="btn ok" data-act="approve">' + t('approve') + '</button><button class="btn no" data-act="reject">' + t('reject') + '</button></div>') + '</div>';
+      }).join('') : '<div class="card empty">' + t('noData') + '</div>') +
+      '<h2 style="margin-top:24px">' + t('recent') + '</h2><div class="tw">' + (recent.length ? '<table class="t"><thead><tr><th>' + t('applicant') + '</th><th>' + t('date') + '</th><th>' + t('start') + '–' + t('end') + '</th><th class="n">' + t('hours') + '</th><th>' + t('status') + '</th><th>' + t('approvedBy') + '</th><th>' + t('approvedAt') + '</th><th>' + t('comment').replace(/\s*\(.*\)/, '') + '</th></tr></thead><tbody>' +
+        recent.map(function (r) {
+          return '<tr><td>' + esc(empName(empById(r.empId)) || r.empName) + '</td><td class="mono">' + r.date + '</td><td class="mono">' + r.start + '–' + r.end + '</td><td class="n">' + n2(r.hours) + '</td><td>' + badge(r.status) + '</td><td>' + esc(r.decidedByName || '') + '</td><td class="mono small">' + fmtTs(r.decidedAt) + '</td><td class="small">' + esc(r.decisionComment || '') + '</td></tr>';
+        }).join('') + '</tbody></table>' : '<div class="empty">' + t('noData') + '</div>') + '</div>';
+    $$('[data-act]', el).forEach(function (b) {
+      b.onclick = function () {
+        var card = b.closest('[data-id]'), id = card.getAttribute('data-id'), act = b.getAttribute('data-act');
+        var cmt = $('[data-cmt]', card).value;
+        if (act === 'reject' && !cmt.trim()) { $('[data-cmt]', card).focus(); return toast(t('rejectReason'), true); }
+        $$('button', card).forEach(function (x) { x.disabled = true; });
+        call('decide', { id: id, decision: act, comment: cmt }).then(function () {
+          toast(act === 'approve' ? t('approvedOk') : t('rejectedOk')); return load();
+        }).catch(function (e) { toast(errMsg(e), true); load(); });
+      };
+    });
+  }
+
+  /* ================= VERIFY ================= */
+  function viewVerify(el) {
+    S.verifyMonth = S.verifyMonth || thisMonth();
+    var m = S.verifyMonth;
+    var reqs = S.data.requests.filter(function (r) { return monthOf(r.date) === m && ['APPROVED', 'VERIFIED', 'CPA'].indexOf(r.status) >= 0; })
+      .sort(function (a, b) { return (a.date + a.empId + a.start).localeCompare(b.date + b.empId + b.start); });
+    var V = S.verify && S.verify.month === m ? S.verify : null;
+    var byId = {}; if (V) V.rows.forEach(function (x) { byId[x.id] = x.match; });
+    var expired = S.data.requests.filter(function (r) { return monthOf(r.date) === m && r.status === 'EXPIRED'; }).length;
+    el.innerHTML = '<div class="row" style="justify-content:space-between"><h2>' + t('tVerify') + '</h2><div class="row">' + monthPicker('vmPick', m) + '<button class="btn pri" id="runV">' + t('runVerify') + '</button></div></div>' +
+      '<p class="muted" style="margin-top:-6px">' + esc(t('verifyHelp')) + (V ? ' · <b>' + esc(t('loadedPunches', { n: V.punchCount })) + '</b>' : '') + '</p>' +
+      '<div class="stats">' + stat(t('st').APPROVED, String(reqs.filter(function (r) { return r.status === 'APPROVED'; }).length)) + stat(t('st').VERIFIED, String(reqs.filter(function (r) { return r.status === 'VERIFIED'; }).length)) + stat(t('st').CPA, String(reqs.filter(function (r) { return r.status === 'CPA'; }).length)) + stat(t('st').EXPIRED, String(expired)) + '</div>' +
+      '<div class="tw">' + (reqs.length ? '<table class="t" id="vTable"><thead><tr><th><input type="checkbox" id="vAll"></th><th>' + t('applicant') + '</th><th>' + t('date') + '</th><th>' + t('dAppr') + '</th><th class="n">' + t('hours') + '</th><th>' + t('timeClock') + '</th><th class="n">' + t('overlap') + '</th><th>' + t('suggestion') + '</th><th>' + t('decision') + '</th><th class="n">' + t('recognized') + '</th><th>' + t('note') + '</th><th>' + t('status') + '</th></tr></thead><tbody>' +
+        reqs.map(function (r) {
+          var mt = byId[r.id], locked = r.status === 'CPA', done = r.status === 'VERIFIED';
+          var ended = (r.date + 'T' + r.end) <= nowET().slice(0, 16) || C.windowOf(r).e >= 1440 && C.addDays(r.date, 1) <= nowET().slice(0, 10);
+          var rec = done || locked ? r.recognizedHours : (mt ? mt.recognizedHours : '');
+          var editable = !locked && !done && mt && ended;
+          return '<tr data-id="' + r.id + '"' + (locked ? ' class="dim"' : '') + '>' +
+            '<td>' + (editable ? '<input type="checkbox" data-sel' + (mt.result === 'OK' ? ' checked' : '') + '>' : '') + '</td>' +
+            '<td>' + esc(empName(empById(r.empId)) || r.empName) + '</td><td class="mono">' + r.date + ' ' + dayName(r.date) + '</td>' +
+            '<td class="mono">' + r.start + '–' + r.end + (Number(r.breakMin) ? '<div class="small muted">-' + r.breakMin + 'm</div>' : '') + '<div class="small muted">✓ ' + fmtTs(r.decidedAt) + '</div></td>' +
+            '<td class="n">' + n2(r.hours) + '</td>' +
+            '<td class="mono small">' + (done || locked ? esc((r.actualIn || '') + (r.actualOut ? '–' + r.actualOut : '')) : (mt ? esc(mt.intervals.join(', ') || '—') + (mt.anomalies.length ? '<div style="color:var(--violet)">' + mt.anomalies.map(function (a) { return esc(t('an')[a] || a); }).join(', ') + '</div>' : '') : (ended ? '' : '<span class="muted">' + t('futureErr') + '</span>'))) + '</td>' +
+            '<td class="n">' + (done || locked ? (r.actualHours !== '' ? n2(r.actualHours) : '') : (mt ? n2(mt.overlapHours) : '')) + '</td>' +
+            '<td>' + (done || locked ? vbadge(r.verifyResult) : (mt ? vbadge(mt.result) : '')) + '</td>' +
+            '<td>' + (editable ? '<select data-choice style="min-width:130px"><option value="clock">' + t('chClock') + ' (' + n2(mt.recognizedHours) + ')</option><option value="full">' + t('chFull') + ' (' + n2(r.hours) + ')</option><option value="zero">' + t('chZero') + '</option><option value="manual">' + t('chManual') + '</option></select>' : '') + '</td>' +
+            '<td class="n">' + (editable ? '<input type="number" data-rec step="0.25" min="0" max="' + r.hours + '" value="' + rec + '" style="width:80px">' : (rec !== '' ? '<b>' + n2(rec) + '</b>' : '')) + '</td>' +
+            '<td>' + (editable ? '<input type="text" data-note>' : '<span class="small">' + esc(r.verifyNote || '') + '</span>') + '</td>' +
+            '<td>' + badge(r.status) + (done ? ' <button class="btn sm ghost" data-undo="' + r.id + '">' + t('undo') + '</button>' : '') + (locked ? '<div class="small muted">' + esc(r.docId) + '</div>' : '') + '</td></tr>';
+        }).join('') + '</tbody></table>' : '<div class="empty">' + t('noData') + '</div>') + '</div>' +
+      (V && reqs.some(function (r) { return r.status === 'APPROVED' && byId[r.id]; }) ? '<div class="row" style="justify-content:flex-end;margin-top:10px"><button class="btn pri" id="vConfirm">' + t('confirmSel') + '</button></div>' : '') +
+      (V ? '<h2 style="margin-top:26px">' + esc(t('unapprovedH')) + '</h2><p class="muted" style="margin-top:-6px">' + esc(t('unapprovedHelp')) + '</p><div class="tw">' +
+        (V.unapproved.length ? (function () {
+          var g = {}; V.unapproved.forEach(function (x) { var k = x.empId; g[k] = g[k] || { n: 0, h: 0, name: empName(empById(x.empId)) || x.empName }; g[k].n++; g[k].h += Number(x.extraHours); });
+          return '<div class="row" style="padding:10px;gap:8px">' + Object.keys(g).map(function (k) { return '<span class="b MANUAL">' + esc(g[k].name) + ' · ' + g[k].n + (S.lang === 'ko' ? '일 · ' : 'd · ') + n2(g[k].h) + 'h</span>'; }).join('') + '</div>';
+        })() + '<details><summary style="padding:8px 10px;cursor:pointer" class="small">' + (S.lang === 'ko' ? '상세 보기' : 'Show detail') + ' (' + V.unapproved.length + ')</summary><table class="t"><thead><tr><th>' + t('applicant') + '</th><th>' + t('date') + '</th><th>' + t('punches') + '</th><th class="n">' + t('extraH') + '</th><th></th></tr></thead><tbody>' +
+          V.unapproved.map(function (x) {
+            return '<tr><td>' + esc(empName(empById(x.empId)) || x.empName) + '</td><td class="mono">' + x.date + ' ' + dayName(x.date) + (x.offDay ? ' <span class="b Y">' + t('offDay') + '</span>' : '') + '</td><td class="mono small">' + esc(x.punches) + '</td><td class="n">' + n2(x.extraHours) + '</td><td class="small muted">' + (x.hasRequest ? t('hasReq') : '') + '</td></tr>';
+          }).join('') + '</tbody></table></details>' : '<div class="empty">' + t('noData') + '</div>') + '</div>' : '');
+
+    bindMonth('vmPick', function (v) { S.verifyMonth = v; S.verify = null; render(); });
+    $('#runV').onclick = function () {
+      var b = this; b.disabled = true;
+      call('verifyPreview', { month: m }).then(function (d) { d.month = m; S.verify = d; toast(t('loadedPunches', { n: d.punchCount })); render(); })
+        .catch(function (e) { toast(errMsg(e), true); b.disabled = false; });
+    };
+    var all = $('#vAll'); if (all) all.onchange = function () { $$('[data-sel]', el).forEach(function (c) { c.checked = all.checked; }); };
+    $$('tr[data-id]', el).forEach(function (tr) {
+      var sel = $('[data-choice]', tr); if (!sel) return;
+      var r = S.data.requests.filter(function (x) { return x.id === tr.getAttribute('data-id'); })[0], mt = byId[r.id];
+      var rec = $('[data-rec]', tr);
+      sel.onchange = function () {
+        if (sel.value === 'clock') rec.value = mt.recognizedHours;
+        if (sel.value === 'full') rec.value = r.hours;
+        if (sel.value === 'zero') rec.value = 0;
+        if (sel.value === 'manual') rec.focus();
+        $('[data-sel]', tr).checked = true;
+      };
+      rec.oninput = function () { sel.value = Number(rec.value) === Number(mt.recognizedHours) ? 'clock' : 'manual'; $('[data-sel]', tr).checked = true; };
+    });
+    $$('[data-undo]', el).forEach(function (b) {
+      b.onclick = function () { call('unverify', { id: b.getAttribute('data-undo') }).then(load).catch(function (e) { toast(errMsg(e), true); }); };
+    });
+    var conf = $('#vConfirm');
+    if (conf) conf.onclick = function () {
+      var items = [];
+      var bad = false;
+      $$('tr[data-id]', el).forEach(function (tr) {
+        var cb = $('[data-sel]', tr); if (!cb || !cb.checked) return;
+        var id = tr.getAttribute('data-id'), mt = byId[id], r = S.data.requests.filter(function (x) { return x.id === id; })[0];
+        var recV = Math.min(Number($('[data-rec]', tr).value) || 0, Number(r.hours));
+        var note = $('[data-note]', tr).value;
+        var result = recV === Number(mt.recognizedHours) ? mt.result : 'MANUAL';
+        if (result === 'MANUAL' && !note.trim()) { bad = true; $('[data-note]', tr).style.borderColor = 'var(--red)'; }
+        items.push({ id: id, result: result, recognizedHours: recV, actualIn: mt.actualIn, actualOut: mt.actualOut, actualHours: mt.overlapHours, note: note });
+      });
+      if (bad) return toast(t('noteReq'), true);
+      if (!items.length) return;
+      conf.disabled = true;
+      call('verify', { items: items }).then(function () { toast(t('confirmed')); return load(); }).catch(function (e) { toast(errMsg(e), true); conf.disabled = false; });
+    };
+  }
+
+  /* ================= CPA ================= */
+  function viewCpa(el) {
+    if (S.docView) return viewDoc(el, S.docView);
+    S.cpaMonth = S.cpaMonth || prevMonth(thisMonth());
+    var m = S.cpaMonth;
+    var ready = S.data.requests.filter(function (r) { return monthOf(r.date) === m && r.status === 'VERIFIED'; })
+      .sort(function (a, b) { return (a.empId + a.date + a.start).localeCompare(b.empId + b.date + b.start); });
+    var docs = (S.data.docs || []).slice().sort(function (a, b) { return String(b.createdAt).localeCompare(String(a.createdAt)); });
+    el.innerHTML = '<div class="row" style="justify-content:space-between"><h2>' + t('tCpa') + '</h2>' + monthPicker('cmPick', m) + '</div>' +
+      '<p class="muted" style="margin-top:-6px">' + esc(t('cpaHelp')) + '</p>' +
+      '<div class="card"><h3>' + t('verifiedReady') + ' — ' + m + '</h3><div class="tw">' + (ready.length ? '<table class="t"><thead><tr><th><input type="checkbox" id="cAll" checked></th><th>' + t('applicant') + '</th><th>' + t('date') + '</th><th>' + t('dAppr') + '</th><th class="n">' + t('hours') + '</th><th class="n">' + t('recognized') + '</th><th class="n">' + t('mult') + '</th><th class="n">' + t('pay') + '</th><th>' + t('suggestion') + '</th></tr></thead><tbody>' +
+        ready.map(function (r) {
+          var zero = !(Number(r.recognizedHours) > 0);
+          return '<tr><td><input type="checkbox" data-cid="' + r.id + '"' + (zero ? '' : ' checked') + '></td><td>' + esc(empName(empById(r.empId)) || r.empName) + '</td><td class="mono">' + r.date + ' ' + dayName(r.date) + '</td><td class="mono">' + r.start + '–' + r.end + '</td><td class="n">' + n2(r.hours) + '</td><td class="n"><b>' + n2(r.recognizedHours) + '</b></td><td class="n">' + r.multiplier + '×</td><td class="n">' + money(r.pay) + '</td><td>' + vbadge(r.verifyResult) + '</td></tr>';
+        }).join('') + '</tbody></table>' : '<div class="empty">' + t('noData') + '</div>') + '</div>' +
+      (ready.length ? '<div class="row" style="justify-content:flex-end;margin-top:10px"><button class="btn pri" id="cIssue">' + t('issue') + '</button></div>' : '') + '</div>' +
+      '<div class="card"><h3>' + t('docHistory') + '</h3><div class="tw">' + (docs.length ? '<table class="t"><thead><tr><th>' + t('docNo') + '</th><th>' + t('month') + '</th><th>' + t('dIssue') + '</th><th>' + t('dPrep') + '</th><th class="n">' + t('recognized') + '</th><th class="n">' + t('dAmt') + '</th><th>' + t('status') + '</th><th></th></tr></thead><tbody>' +
+        docs.map(function (d) {
+          return '<tr' + (d.status === 'VOID' ? ' class="dim"' : '') + '><td class="mono"><b>' + esc(d.id) + '</b></td><td class="mono">' + d.month + '</td><td class="mono small">' + fmtTs(d.createdAt) + '</td><td>' + esc(d.createdBy) + '</td><td class="n">' + n2(d.totalHours) + '</td><td class="n">' + money(d.totalPay) + '</td><td>' + (d.status === 'VOID' ? '<span class="b REJECTED">VOID</span>' : '<span class="b CPA">ISSUED</span>') + '</td><td><button class="btn sm" data-view="' + esc(d.id) + '">' + t('view') + '</button></td></tr>';
+        }).join('') + '</tbody></table>' : '<div class="empty">' + t('noData') + '</div>') + '</div></div>';
+    bindMonth('cmPick', function (v) { S.cpaMonth = v; render(); });
+    var ca = $('#cAll'); if (ca) ca.onchange = function () { $$('[data-cid]', el).forEach(function (c) { c.checked = ca.checked; }); };
+    var ci = $('#cIssue');
+    if (ci) ci.onclick = function () {
+      var ids = $$('[data-cid]', el).filter(function (c) { return c.checked; }).map(function (c) { return c.getAttribute('data-cid'); });
+      if (!ids.length) return;
+      ci.disabled = true;
+      call('issueDoc', { month: m, ids: ids }).then(function (d) { toast(t('issued') + ' — ' + d.doc.id); S.docView = d.doc.id; return load(); })
+        .catch(function (e) { toast(errMsg(e), true); ci.disabled = false; });
+    };
+    $$('[data-view]', el).forEach(function (b) { b.onclick = function () { S.docView = b.getAttribute('data-view'); S.docLang = null; render(); }; });
+  }
+
+  function viewDoc(el, id) {
+    var d = (S.data.docs || []).filter(function (x) { return x.id === id; })[0];
+    if (!d) { S.docView = null; return viewCpa(el); }
+    var L = S.docLang || S.lang;
+    el.innerHTML = '<div class="row" style="justify-content:space-between;margin-bottom:12px"><button class="btn" id="dBack">' + t('back') + '</button><div class="row">' +
+      '<span class="small muted">' + t('docLang') + '</span><div class="lang"><button data-dl="ko" class="' + (L === 'ko' ? 'on' : '') + '">한국어</button><button data-dl="en" class="' + (L === 'en' ? 'on' : '') + '">EN</button></div>' +
+      '<button class="btn" id="dCsv">' + t('csv') + '</button><button class="btn pri" id="dPrint">' + t('print') + '</button>' +
+      (d.status !== 'VOID' ? '<button class="btn no" id="dVoid">' + t('void') + '</button>' : '') + '</div></div>' +
+      '<div class="doc-wrap">' + docHtml(d, L) + '</div>';
+    $('#dBack').onclick = function () { S.docView = null; render(); };
+    $$('[data-dl]', el).forEach(function (b) { b.onclick = function () { S.docLang = b.getAttribute('data-dl'); render(); }; });
+    $('#dPrint').onclick = function () {
+      var pa = $('#printArea'); pa.innerHTML = docHtml(d, L);
+      document.body.classList.add('printing');
+      var prevTitle = document.title; document.title = d.id + '_Overtime_Request';
+      setTimeout(function () { window.print(); document.body.classList.remove('printing'); document.title = prevTitle; }, 50);
+    };
+    $('#dCsv').onclick = function () { downloadCsv(d, L); };
+    var v = $('#dVoid');
+    if (v) v.onclick = function () {
+      if (v.getAttribute('data-armed') !== '1') { v.setAttribute('data-armed', '1'); v.textContent = t('void') + '?'; return; }
+      call('voidDoc', { id: d.id }).then(function () { toast(t('voided')); return load(); }).catch(function (e) { toast(errMsg(e), true); });
+    };
+  }
+
+  function docRows(d) {
+    var ids = String(d.requestIds || '').split(',');
+    return S.data.requests.filter(function (r) { return ids.indexOf(r.id) >= 0; })
+      .sort(function (a, b) { return (a.empId + a.date + a.start).localeCompare(b.empId + b.date + b.start); });
+  }
+  function docHtml(d, L) {
+    var save = S.lang; S.lang = L;
+    try {
+      var s = S.data.settings, rows = docRows(d);
+      var emps = {};
+      rows.forEach(function (r) {
+        var e = emps[r.empId] || (emps[r.empId] = { emp: empById(r.empId), name: r.empName, rows: [], wk: 0, pr: 0, tot: 0, amt: 0, rate: r.rate });
+        e.rows.push(r);
+        var h = Number(r.recognizedHours) || 0;
+        if (r.premium === 'Y') e.pr += h; else e.wk += h;
+        e.tot += h; e.amt += Number(r.pay) || 0;
+      });
+      var list = Object.keys(emps).map(function (k) { return emps[k]; });
+      var G = list.reduce(function (a, e) { a.wk += e.wk; a.pr += e.pr; a.tot += e.tot; a.amt += e.amt; return a; }, { wk: 0, pr: 0, tot: 0, amt: 0 });
+      var mLabel = L === 'ko' ? d.month.replace('-', '년 ') + '월' : new Date(d.month + '-15T12:00:00Z').toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+      var nm = function (e) { return e.emp ? empName(e.emp) : e.name; };
+      var h = '<div class="doc">' + (d.status === 'VOID' ? '<div class="void">' + t('dVoid') + '</div>' : '') +
+        '<div class="lh"><div class="co">' + esc(s.companyName) + '</div><div class="ad">' + esc(s.address) + '<br>Tel ' + esc(s.phone) + '</div></div>' +
+        '<h1>' + esc(t('dTitle')) + '</h1><div class="h1s">' + esc(t('dSub')) + '</div>' +
+        '<table class="meta"><tr><td>' + t('dNo') + '</td><td class="mono">' + esc(d.id) + '</td><td>' + t('dIssue') + '</td><td class="mono">' + esc(String(d.createdAt).slice(0, 10)) + '</td></tr>' +
+        '<tr><td>' + t('dTo') + '</td><td>' + esc(s.cpaName || 'CPA') + (s.cpaEmail ? '<br><span class="small">' + esc(s.cpaEmail) + '</span>' : '') + '</td><td>' + t('dFrom') + '</td><td>' + esc(s.companyName) + '</td></tr>' +
+        '<tr><td>' + t('dPeriod') + '</td><td>' + esc(mLabel) + '</td><td>' + t('dPrep') + '</td><td>' + esc(d.createdBy) + '</td></tr></table>' +
+        '<div class="pol">' + t('dPol') + '</div>' +
+        '<p>' + esc(t('dReq', { m: mLabel })) + '</p>' +
+        '<h4>' + t('dSum') + '</h4><table><tr><th>' + t('dEmp') + '</th><th class="n">' + t('rate') + '</th><th class="n">' + t('dWkH') + '</th><th class="n">' + t('dPrH') + '</th><th class="n">' + t('dTotH') + '</th><th class="n">' + t('dAmt') + '</th></tr>' +
+        list.map(function (e) { return '<tr><td>' + esc(nm(e)) + '</td><td class="n">' + money(e.rate) + '</td><td class="n">' + n2(e.wk) + '</td><td class="n">' + n2(e.pr) + '</td><td class="n">' + n2(e.tot) + '</td><td class="n">' + money(e.amt) + '</td></tr>'; }).join('') +
+        '<tr class="tot"><td colspan="2">' + t('total') + '</td><td class="n">' + n2(G.wk) + '</td><td class="n">' + n2(G.pr) + '</td><td class="n">' + n2(G.tot) + '</td><td class="n">$' + money(G.amt) + '</td></tr></table>' +
+        '<h4>' + t('dDet') + '</h4>' +
+        list.map(function (e) {
+          return '<table class="det"><colgroup><col style="width:13%"><col style="width:22%"><col style="width:11%"><col style="width:15%"><col style="width:11%"><col style="width:7%"><col style="width:7%"><col style="width:5.5%"><col style="width:8.5%"></colgroup><tr><th colspan="9">' + esc(nm(e)) + (e.emp && e.emp.dept ? ' · ' + esc(e.emp.dept) : '') + '</th></tr><tr><th>' + t('date') + '</th><th>' + t('otType') + '</th><th>' + t('dAppr') + '</th><th>' + t('dApprAt') + '</th><th>' + t('dTc') + '</th><th class="n">' + t('hours') + '</th><th class="n">' + t('dRec') + '</th><th class="n">' + t('mult') + '</th><th class="n">' + t('dAmt') + '</th></tr>' +
+            e.rows.map(function (r) {
+              return '<tr><td class="mono">' + r.date + ' ' + dayName(r.date) + '</td><td>' + esc(typeLabel(r.otType)) + '<div class="small" style="color:#555">' + esc(r.description) + '</div></td><td class="mono">' + r.start + '–' + r.end + (Number(r.breakMin) ? '<br><span class="small">-' + r.breakMin + 'm</span>' : '') + '</td>' +
+                '<td class="small">' + esc(r.decidedByName) + '<br><span class="mono">' + fmtTs(r.decidedAt) + '</span></td><td class="mono">' + esc((r.actualIn || '—') + (r.actualOut ? '–' + r.actualOut : '')) + (r.verifyNote ? '<br><span class="small">' + esc(r.verifyNote) + '</span>' : '') + '</td>' +
+                '<td class="n">' + n2(r.hours) + '</td><td class="n"><b>' + n2(r.recognizedHours) + '</b></td><td class="n">' + r.multiplier + '×</td><td class="n">' + money(r.pay) + '</td></tr>';
+            }).join('') + '<tr class="tot"><td colspan="5">' + t('total') + '</td><td class="n">' + n2(e.rows.reduce(function (a, r) { return a + Number(r.hours); }, 0)) + '</td><td class="n">' + n2(e.tot) + '</td><td></td><td class="n">' + money(e.amt) + '</td></tr></table>';
+        }).join('') +
+        '<h4>' + t('dNotes') + '</h4><ol style="margin:0 0 0 16px;padding:0;font-size:10.5px"><li>' + esc(t('dN1', { wk: s.weekdayMultiplier, pr: s.premiumMultiplier })) + '</li><li>' + esc(t('dN2', { g: s.graceMinutes })) + '</li><li>' + esc(t('dN3')) + '</li></ol>' +
+        '<div class="sig"><div><b>' + t('dSigPrep') + '</b><div class="sl"></div>' + t('dSigName') + '</div><div><b>' + t('dSigAppr') + '</b><div class="sl"></div>' + t('dSigName') + '</div></div>' +
+        '<div class="foot">' + esc(d.id) + ' · ' + esc(t('dFoot')) + ' · ' + esc(fmtTs(d.createdAt)) + ' ET' + (d.note ? ' · ' + esc(d.note) : '') + '</div></div>';
+      return h;
+    } finally { S.lang = save; }
+  }
+  function downloadCsv(d, L) {
+    var save = S.lang; S.lang = L;
+    var head = [t('docNo'), t('dEmp'), t('empId'), t('date'), t('day'), t('otType'), t('desc'), t('start'), t('end'), t('brk'), t('hours'), t('approvedBy'), t('approvedAt'), t('dTc'), t('dRec'), t('rate'), t('mult'), t('dAmt'), t('note')];
+    var rows = docRows(d).map(function (r) {
+      return [d.id, empName(empById(r.empId)) || r.empName, r.empId, r.date, dayName(r.date), typeLabel(r.otType), r.description, r.start, r.end, r.breakMin, r.hours, r.decidedByName, fmtTs(r.decidedAt), (r.actualIn || '') + (r.actualOut ? '-' + r.actualOut : ''), r.recognizedHours, r.rate, r.multiplier, r.pay, r.verifyNote];
+    });
+    S.lang = save;
+    var csv = '﻿' + [head].concat(rows).map(function (r) { return r.map(function (v) { v = String(v == null ? '' : v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }).join(','); }).join('\r\n');
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = d.id + '.csv'; document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  /* ================= ADMIN ================= */
+  function viewAdmin(el) {
+    var s = S.data.settings;
+    var emps = S.data.employees;
+    el.innerHTML = '<h2>' + t('employees') + '</h2><div class="card"><div class="tw"><table class="t"><thead><tr><th>ID</th><th>' + t('empName') + '</th><th>EN</th><th>' + t('tcName') + '</th><th>' + t('dept') + '</th><th>' + t('email') + '</th><th class="n">' + t('rate') + '</th><th>' + t('sched') + '</th><th>' + t('roles') + '</th><th>' + t('active') + '</th><th></th></tr></thead><tbody>' +
+      emps.map(function (e) {
+        return '<tr' + (C.isTrue(e.active) ? '' : ' class="dim"') + '><td class="mono">' + esc(e.id) + '</td><td>' + esc(e.name) + '</td><td>' + esc(e.nameEn) + '</td><td>' + esc(e.timeClockName || '—') + '</td><td>' + esc(e.dept) + '</td><td class="small">' + esc(e.email) + '</td><td class="n">' + money(e.rate) + '</td><td class="mono small">' + esc(e.schedStart) + '–' + esc(e.schedEnd) + '</td><td class="small">' + esc(e.roles) + '</td><td>' + (C.isTrue(e.active) ? '✓' : '') + '</td><td><button class="btn sm" data-edit="' + esc(e.id) + '">' + t('edit') + '</button></td></tr>';
+      }).join('') + '</tbody></table></div><div class="row" style="margin-top:10px"><button class="btn sm" id="addEmp">' + t('addEmp') + '</button></div></div>' +
+
+      '<h2>' + t('holidays') + '</h2><div class="card"><div id="holBox"></div><div class="row" style="margin-top:10px"><button class="btn sm" id="addHol">' + t('addHol') + '</button><span class="sp"></span><input type="number" id="fedYear" value="' + nowET().slice(0, 4) + '" style="width:90px"><button class="btn sm" id="loadFed">' + t('loadFed') + '</button><button class="btn sm pri" id="saveHol">' + t('save') + '</button></div></div>' +
+
+      '<h2>' + t('settings') + '</h2><div class="card"><div class="grid" id="setBox">' +
+      sf('companyName', t('sCompany')) + sf('address', t('sAddress')) + sf('phone', t('sPhone')) +
+      sf('weekdayMultiplier', t('sWk'), 'number') + sf('premiumMultiplier', t('sPrem'), 'number') +
+      sfb('premiumSaturday', t('sSat')) + sfb('premiumSunday', t('sSun')) +
+      sf('graceMinutes', t('sGrace'), 'number') + sf('reviewMinutes', t('sReview'), 'number') +
+      sf('cpaName', t('sCpaName')) + sf('cpaEmail', t('sCpaEmail'), 'email') + sf('adminEmail', t('sAdminEmail'), 'email') + sf('ccEmail', t('sCc'), 'email') + sf('appUrl', t('sUrl')) +
+      sf('timeClockSheetId', t('sTcId')) + sf('timeClockSheetName', t('sTcName')) +
+      '</div><div class="field" style="margin-top:10px"><label>' + t('sTypes') + '</label><textarea data-s="otTypes" rows="6">' + esc(s.otTypes) + '</textarea></div>' +
+      '<div class="row" style="justify-content:flex-end"><button class="btn pri" id="saveSet">' + t('save') + '</button></div></div>';
+    function sf(k, l, type) { return '<div class="field"><label>' + esc(l) + '</label><input type="' + (type || 'text') + '" data-s="' + k + '" value="' + esc(s[k]) + '"' + (type === 'number' ? ' step="0.01"' : '') + '></div>'; }
+    function sfb(k, l) { return '<div class="field"><label>' + esc(l) + '</label><select data-s="' + k + '"><option value="TRUE"' + (C.isTrue(s[k]) ? ' selected' : '') + '>Yes</option><option value="FALSE"' + (C.isTrue(s[k]) ? '' : ' selected') + '>No</option></select></div>'; }
+
+    var hol = S.data.holidays.map(function (h) { return { date: h.date, name: h.name }; });
+    function drawHol() {
+      $('#holBox').innerHTML = '<div class="tw"><table class="t"><thead><tr><th>' + t('date') + '</th><th>' + t('day') + '</th><th>' + t('holName') + '</th><th></th></tr></thead><tbody>' +
+        hol.map(function (h, i) { return '<tr data-hi="' + i + '"><td><input type="date" data-h="date" value="' + esc(h.date) + '" style="width:160px"></td><td>' + (h.date ? dayName(h.date) : '') + '</td><td><input type="text" data-h="name" value="' + esc(h.name) + '"></td><td><button class="btn sm ghost" data-hdel="' + i + '">✕</button></td></tr>'; }).join('') + '</tbody></table></div>';
+      $$('[data-h]', $('#holBox')).forEach(function (inp) { inp.onchange = function () { hol[Number(inp.closest('tr').getAttribute('data-hi'))][inp.getAttribute('data-h')] = inp.value; if (inp.getAttribute('data-h') === 'date') drawHol(); }; });
+      $$('[data-hdel]', $('#holBox')).forEach(function (b) { b.onclick = function () { hol.splice(Number(b.getAttribute('data-hdel')), 1); drawHol(); }; });
+    }
+    drawHol();
+    $('#addHol').onclick = function () { hol.push({ date: '', name: '' }); drawHol(); };
+    $('#loadFed').onclick = function () {
+      var have = {}; hol.forEach(function (h) { have[h.date] = 1; });
+      C.federalHolidays(Number($('#fedYear').value)).forEach(function (h) { if (!have[h.date]) hol.push(h); });
+      hol.sort(function (a, b) { return a.date < b.date ? -1 : 1; }); drawHol();
+    };
+    $('#saveHol').onclick = function () { call('saveHolidays', { holidays: hol }).then(function () { toast(t('saved')); return load(); }).catch(function (e) { toast(errMsg(e), true); }); };
+    $('#saveSet').onclick = function () {
+      var o = {}; $$('[data-s]', el).forEach(function (i) { o[i.getAttribute('data-s')] = i.value; });
+      call('saveSettings', { settings: o }).then(function () { toast(t('saved')); return load(); }).catch(function (e) { toast(errMsg(e), true); });
+    };
+    $('#addEmp').onclick = function () { empModal({ id: '', name: '', nameEn: '', timeClockName: '', dept: '', email: '', rate: '', roles: 'employee', active: 'TRUE', schedStart: '09:00', schedEnd: '17:00' }); };
+    $$('[data-edit]', el).forEach(function (b) { b.onclick = function () { empModal(empById(b.getAttribute('data-edit'))); }; });
+  }
+  function empModal(e) {
+    var roles = String(e.roles || '').split(/[,\s]+/);
+    function f(k, l, type) { return '<div class="field"><label>' + esc(l) + '</label><input type="' + (type || 'text') + '" data-e="' + k + '" value="' + esc(e[k] == null ? '' : e[k]) + '"></div>'; }
+    modal('<h3>' + (e.id ? esc(e.id) : t('addEmp')) + '</h3><div class="grid">' +
+      f('name', t('empName')) + f('nameEn', 'English') + f('timeClockName', t('tcName')) + f('dept', t('dept')) + f('email', t('email'), 'email') + f('rate', t('rate'), 'number') +
+      f('schedStart', t('start'), 'time') + f('schedEnd', t('end'), 'time') + f('pin', t('newPin'), 'password') +
+      '<div class="field"><label>' + t('active') + '</label><select data-e="active"><option value="TRUE">Yes</option><option value="FALSE"' + (C.isTrue(e.active) ? '' : ' selected') + '>No</option></select></div></div>' +
+      '<div class="field"><label>' + t('roles') + '</label><div class="row">' + [['employee', t('roleEmployee')], ['approver', t('roleApprover')], ['admin', t('roleAdmin')]].map(function (r) {
+        return '<label class="row" style="gap:5px"><input type="checkbox" data-role="' + r[0] + '"' + (roles.indexOf(r[0]) >= 0 ? ' checked' : '') + '>' + r[1] + '</label>';
+      }).join('') + '</div></div>' +
+      '<p class="small muted">' + esc(t('tcName')) + ': ' + (S.lang === 'ko' ? '출퇴근 기록 시트의 "이름 (Name)"과 정확히 같아야 대조됩니다.' : 'Must exactly match "이름 (Name)" in the Time Clock sheet.') + '</p>' +
+      '<div class="acts"><button class="btn" data-x>' + t('close') + '</button><button class="btn pri" data-ok>' + t('save') + '</button></div>', function (m, close) {
+        $('[data-x]', m).onclick = close;
+        $('[data-ok]', m).onclick = function () {
+          var o = { id: e.id };
+          $$('[data-e]', m).forEach(function (i) { o[i.getAttribute('data-e')] = i.value; });
+          o.roles = $$('[data-role]', m).filter(function (c) { return c.checked; }).map(function (c) { return c.getAttribute('data-role'); }).join(',');
+          if (!o.name) return toast(t('empName') + '?', true);
+          call('saveEmployee', { emp: o }).then(function () { toast(t('saved')); close(); return load(); }).catch(function (er) { toast(errMsg(er), true); });
+        };
+      });
+  }
+
+  /* ================= DEMO ================= */
+  function viewDemo(el) {
+    var ob = demoStore.demo.outbox();
+    var imp = demoStore.demo.hasImport();
+    el.innerHTML = '<h2>' + t('tDemo') + '</h2>' +
+      '<div class="card"><h3>' + t('demoClock') + '</h3><div class="row"><input type="datetime-local" id="dmNow" value="' + nowET().slice(0, 16) + '" style="width:230px"><button class="btn pri" id="dmSet">' + t('setClock') + '</button><button class="btn" id="dmReal">' + t('resetClock') + '</button></div>' +
+      '<p class="small muted">' + (S.lang === 'ko' ? '시계를 앞뒤로 옮겨 "시작 전 신청 → 승인 → 근무 후 검증" 흐름을 시험하세요. 승인 대기 상태로 시작 시각이 지나면 자동 만료됩니다.' : 'Move the clock to test "request before start → approve → verify after work". Pending requests expire once their start time passes.') + '</p></div>' +
+      '<div class="card"><h3>' + t('scenario') + '</h3><p class="small muted">' + esc(t('scenarioHelp')) + '</p><button class="btn" id="dmScen">' + t('scenario') + '</button></div>' +
+      '<div class="card"><h3>' + t('importCsv') + (imp ? ' <span class="b OK">' + imp + '</span>' : '') + '</h3><p class="small muted">' + esc(t('importHelp')) + '</p><textarea id="dmCsv" rows="5" placeholder="기록ID (Record ID),날짜 ET (Date),요일 (Day),이름 (Name),구분 (Type),시각 ET (Time),..."></textarea>' +
+      '<div class="row" style="margin-top:8px"><input type="file" id="dmFile" accept=".csv,text/csv" style="max-width:260px"><button class="btn pri" id="dmImp">' + t('importBtn') + '</button><button class="btn" id="dmClr">' + t('clearImport') + '</button></div></div>' +
+      '<div class="card"><h3>' + t('outbox') + ' (' + ob.length + ')</h3>' + (ob.length ? ob.map(function (m) {
+        return '<details style="border-top:1px solid var(--line2);padding:6px 0"><summary><span class="mono small">' + fmtTs(m.at) + '</span> → <b>' + esc(m.to) + '</b> · ' + esc(m.subject) + '</summary><div style="padding:8px;background:#fafbfa;border-radius:6px;margin-top:6px">' + m.html + '</div></details>';
+      }).join('') : '<p class="small muted">' + (S.lang === 'ko' ? '관리 › 직원 관리에서 이메일을 입력하면 알림 메일이 여기에 표시됩니다.' : 'Add emails in Admin › Employees to see notifications here.') + '</p>') + '</div>' +
+      '<div class="card"><button class="btn no" id="dmReset">' + t('resetAll') + '</button></div>';
+    $('#dmSet').onclick = function () { demoStore.demo.setNow($('#dmNow').value); load(); };
+    $('#dmReal').onclick = function () { demoStore.demo.resetClock(); load(); };
+    $('#dmFile').onchange = function () { var f = this.files[0]; if (!f) return; var rd = new FileReader(); rd.onload = function () { $('#dmCsv').value = rd.result; }; rd.readAsText(f); };
+    $('#dmImp').onclick = function () { try { var n = demoStore.demo.importCsv($('#dmCsv').value); toast(t('loadedPunches', { n: n })); S.verify = null; render(); } catch (e) { toast(e.message, true); } };
+    $('#dmClr').onclick = function () { demoStore.demo.clearImport(); S.verify = null; render(); };
+    $('#dmReset').onclick = function () {
+      var b = this; if (b.getAttribute('data-armed') !== '1') { b.setAttribute('data-armed', '1'); b.textContent = t('confirmReset'); return; }
+      demoStore.demo.resetAll(); S.verify = null; logout();
+    };
+    $('#dmScen').onclick = function () { makeScenario().then(function () { toast('OK'); return load(); }).catch(function (e) { toast(errMsg(e), true); }); };
+  }
+
+  /** Builds requests through the real API by moving the virtual clock back before each start. */
+  function makeScenario() {
+    var realNow = nowET();
+    var base = prevMonth(realNow.slice(0, 7));
+    var plan = [
+      ['E001', base + '-06', '17:00', '19:30', 0, '배관 작업|Piping work', 'Line 2 piping replacement'],
+      ['E002', base + '-08', '17:00', '20:00', 0, '출하·선적|Shipping / Loading', 'HF ISO tank loading — late truck'],
+      ['E003', base + '-13', '17:00', '19:00', 0, '설비 보수|Maintenance', 'Scrubber pump PM'],
+      ['E004', base + '-14', '16:00', '18:00', 0, '생산 작업|Production', 'KOH batch finish'],
+      ['E001', base + '-17', '09:00', '15:00', 30, '재고·창고|Inventory / Warehouse', 'Saturday cycle count'],
+      ['E005', base + '-21', '16:00', '19:00', 0, '생산 작업|Production', 'Urgent repack order'],
+      ['E002', base + '-27', '17:00', '18:30', 0, '출하·선적|Shipping / Loading', 'Export docs + loading']
+    ];
+    var adminTok, chain = call('login', { empId: 'admin', pin: '1234' }).then(function (d) { adminTok = d.token; });
+    plan.forEach(function (p) {
+      var d = p[1];
+      // ensure Saturday item is a Saturday
+      if (p[4] === 30) { while (C.weekday(d) !== 6) d = C.addDays(d, 1); }
+      else { while (C.weekday(d) === 0 || C.weekday(d) === 6) d = C.addDays(d, 1); }
+      chain = chain.then(function () {
+        demoStore.demo.setNow(C.addDays(d, -1) + 'T10:00');
+        return call('login', { empId: p[0], pin: '0000' });
+      }).then(function (lg) {
+        return call('submit', { token: lg.token, ack: true, lines: [{ date: d, start: p[2], end: p[3], breakMin: p[4], otType: p[5], description: p[6] }] });
+      }).then(function (r) {
+        demoStore.demo.setNow(C.addDays(d, -1) + 'T14:30');
+        return call('decide', { token: adminTok, id: r.created[0].id, decision: 'approve', comment: '' });
+      }).catch(function () { });
+    });
+    // one late request that expires (not pre-approved)
+    chain = chain.then(function () {
+      var d = base + '-22'; while (C.weekday(d) === 0 || C.weekday(d) === 6) d = C.addDays(d, 1);
+      demoStore.demo.setNow(d + 'T15:00');
+      return call('login', { empId: 'E003', pin: '0000' }).then(function (lg) {
+        return call('submit', { token: lg.token, ack: true, lines: [{ date: d, start: '17:00', end: '19:00', breakMin: 0, otType: '기타|Other', description: 'Not approved in time' }] });
+      });
+    }).catch(function () { });
+    return chain.then(function () { demoStore.demo.setNow(realNow.slice(0, 16)); });
+  }
+
+  document.addEventListener('DOMContentLoaded', boot);
+})();
+
+</script>
+</body>
+</html>
