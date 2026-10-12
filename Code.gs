@@ -1,3 +1,7 @@
+/*
+ * © 2025–2026 Young Tai Kang. All rights reserved.
+ * Licensed to JNF AM LLC for internal use.
+ */
 /* ============================================================
  * JNFAM Overtime — Google Apps Script backend (Google Sheets store)
  *
